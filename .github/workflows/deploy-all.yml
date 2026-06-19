@@ -2,8 +2,14 @@ name: Deploy All — FIFA 2026 (Provision + DB + Backend + Frontend)
 
 # Workflow mestre: executa todo o pipeline do zero com 1 clique.
 #
+# Ambiente atual (Central India, sufixo erick2026):
+#   Frontend : https://fifa2026-web-erick2026.azurewebsites.net
+#   Backend  : https://fifa2026-back-erick2026.azurewebsites.net
+#   SQL      : fifa2026-sql-erick2026.database.windows.net
+#   RG       : fifa2026-rg
+#
 # Ordem de execução:
-#   1. Provision Infrastructure — cria/atualiza todos os recursos Azure via Bicep
+#   1. Provision Infrastructure — cria/atualiza recursos Azure via Bicep
 #   2. Setup Database          — aplica schema, seed e migrations no Azure SQL
 #   3. Deploy Backend          — publica a API Node.js no Web App
 #   4. Deploy Frontend         — builda e publica o React no Web App
@@ -23,26 +29,28 @@ name: Deploy All — FIFA 2026 (Provision + DB + Backend + Frontend)
 on:
   workflow_dispatch:
     inputs:
-      naming_prefix:
-        description: 'Prefixo dos recursos Azure (ex: fifa2026)'
+      # ── Nomes dos recursos (defaults = ambiente erick2026 já existente) ──
+      backend_app_name:
+        description: 'Web App backend'
         required: true
-        default: 'fifa2026'
-      location:
-        description: 'Região Azure'
+        default: 'fifa2026-back-erick2026'
+      frontend_app_name:
+        description: 'Web App frontend'
         required: true
-        default: 'eastus2'
-      plan_sku:
-        description: 'SKU do App Service Plan'
+        default: 'fifa2026-web-erick2026'
+      backend_url:
+        description: 'URL pública do backend (embutida no build do frontend)'
         required: true
-        default: 'B1'
-        type: choice
-        options: ['B1', 'B2', 'S1', 'S2', 'P1v3']
-      sql_sku:
-        description: 'SKU do Azure SQL Database'
+        default: 'https://fifa2026-back-erick2026.azurewebsites.net'
+      sql_server:
+        description: 'SQL Server name (sem .database.windows.net)'
         required: true
-        default: 'Basic'
-        type: choice
-        options: ['Basic', 'S0', 'S1', 'S2']
+        default: 'fifa2026-sql-erick2026'
+      resource_group:
+        description: 'Resource Group'
+        required: true
+        default: 'fifa2026-rg'
+      # ── Opções do pipeline ──
       run_migrations:
         description: 'Executar migrations completas (times, estádios, partidas)?'
         required: true
@@ -51,13 +59,34 @@ on:
       skip_infra:
         description: 'Pular provisionamento (infra já existe)?'
         required: true
-        default: 'false'
+        default: 'true'
         type: boolean
       skip_database:
         description: 'Pular inicialização do banco?'
         required: true
         default: 'false'
         type: boolean
+      # ── Parâmetros de provisionamento (usados apenas se skip_infra=false) ──
+      naming_prefix:
+        description: '[Apenas se skip_infra=false] Prefixo Bicep para novos recursos'
+        required: false
+        default: 'fifa2026'
+      location:
+        description: '[Apenas se skip_infra=false] Região Azure'
+        required: false
+        default: 'centralindia'
+      plan_sku:
+        description: '[Apenas se skip_infra=false] SKU App Service Plan'
+        required: false
+        default: 'B1'
+        type: choice
+        options: ['B1', 'B2', 'S1', 'S2', 'P1v3']
+      sql_sku:
+        description: '[Apenas se skip_infra=false] SKU Azure SQL'
+        required: false
+        default: 'Basic'
+        type: choice
+        options: ['Basic', 'S0', 'S1', 'S2']
 
 permissions:
   id-token: write
@@ -65,7 +94,7 @@ permissions:
 
 jobs:
   # ─────────────────────────────────────────────
-  # JOB 1 — Infraestrutura
+  # JOB 1 — Infraestrutura (pulado por padrão se já existe)
   # ─────────────────────────────────────────────
   provision:
     name: '1 — Provision Infrastructure'
@@ -84,14 +113,14 @@ jobs:
   setup-database:
     name: '2 — Setup Database'
     needs: [provision]
-    # Roda se: banco não foi pulado E (infra ok OU infra pulada)
     if: |
       always()
       && github.event.inputs.skip_database != 'true'
       && (needs.provision.result == 'success' || github.event.inputs.skip_infra == 'true')
     uses: ./.github/workflows/setup-database.yml
     with:
-      naming_prefix:  ${{ github.event.inputs.naming_prefix }}
+      sql_server:     ${{ github.event.inputs.sql_server }}
+      resource_group: ${{ github.event.inputs.resource_group }}
       run_migrations: ${{ github.event.inputs.run_migrations == 'true' }}
     secrets: inherit
 
@@ -101,14 +130,13 @@ jobs:
   deploy-backend:
     name: '3 — Deploy Backend'
     needs: [provision, setup-database]
-    # Roda se: banco ok (ou pulado) E infra ok (ou pulada)
     if: |
       always()
       && (needs.setup-database.result == 'success' || github.event.inputs.skip_database == 'true')
       && (needs.provision.result == 'success' || github.event.inputs.skip_infra == 'true')
     uses: ./.github/workflows/deploy-backend.yml
     with:
-      app_name: ${{ format('{0}-back', github.event.inputs.naming_prefix) }}
+      app_name: ${{ github.event.inputs.backend_app_name }}
     secrets: inherit
 
   # ─────────────────────────────────────────────
@@ -117,18 +145,12 @@ jobs:
   deploy-frontend:
     name: '4 — Deploy Frontend'
     needs: [provision, deploy-backend]
-    # Roda se: backend ok E infra ok (ou pulada)
     if: |
       always()
       && needs.deploy-backend.result == 'success'
       && (needs.provision.result == 'success' || github.event.inputs.skip_infra == 'true')
     uses: ./.github/workflows/deploy-frontend.yml
     with:
-      app_name: ${{ format('{0}-web', github.event.inputs.naming_prefix) }}
-      # Usa URL real da infra quando disponível; cai no padrão se infra foi pulada
-      backend_url: >-
-        ${{
-          needs.provision.outputs.backend_url
-          || format('https://{0}-back.azurewebsites.net', github.event.inputs.naming_prefix)
-        }}
+      app_name:    ${{ github.event.inputs.frontend_app_name }}
+      backend_url: ${{ github.event.inputs.backend_url }}
     secrets: inherit

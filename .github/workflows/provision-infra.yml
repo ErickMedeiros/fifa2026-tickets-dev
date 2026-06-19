@@ -28,7 +28,7 @@ on:
       location:
         description: 'Região Azure'
         required: true
-        default: 'eastus2'
+        default: 'centralindia'
       plan_sku:
         description: 'SKU do App Service Plan'
         required: true
@@ -51,7 +51,7 @@ on:
       location:
         type: string
         required: false
-        default: 'eastus2'
+        default: 'centralindia'
       plan_sku:
         type: string
         required: false

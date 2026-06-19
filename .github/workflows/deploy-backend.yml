@@ -21,7 +21,7 @@ on:
       app_name:
         description: 'Azure Web App name (backend)'
         required: true
-        default: 'fifa2026-back'
+        default: 'fifa2026-back-erick2026'
 
   push:
     branches: [main]
@@ -34,7 +34,7 @@ on:
       app_name:
         type: string
         required: false
-        default: 'fifa2026-back'
+        default: 'fifa2026-back-erick2026'
 
 permissions:
   id-token: write
@@ -43,7 +43,7 @@ permissions:
 env:
   WORKING_DIR:      'fifa2026-api'
   NODE_VERSION:     '18'
-  DEFAULT_APP_NAME: 'fifa2026-back'
+  DEFAULT_APP_NAME: 'fifa2026-back-erick2026'
 
 jobs:
   build-and-deploy:

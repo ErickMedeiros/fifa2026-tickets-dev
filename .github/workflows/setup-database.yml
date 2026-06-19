@@ -12,6 +12,10 @@ name: Setup Database (FIFA 2026)
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 #   SQL_ADMIN_PASSWORD
 #
+# Ambiente atual:
+#   SQL Server: fifa2026-sql-erick2026.database.windows.net
+#   Resource Group: fifa2026-rg
+#
 # Triggers:
 #   - workflow_dispatch (manual)
 #   - workflow_call    (chamado por deploy-all.yml)
@@ -19,10 +23,14 @@ name: Setup Database (FIFA 2026)
 on:
   workflow_dispatch:
     inputs:
-      naming_prefix:
-        description: 'Prefixo dos recursos (deve bater com o provisionado)'
+      sql_server:
+        description: 'Nome do SQL Server (sem .database.windows.net)'
         required: true
-        default: 'fifa2026'
+        default: 'fifa2026-sql-erick2026'
+      resource_group:
+        description: 'Resource Group do SQL Server'
+        required: true
+        default: 'fifa2026-rg'
       run_migrations:
         description: 'Executar migrations (times, estádios, partidas, ingressos)?'
         required: true
@@ -36,10 +44,14 @@ on:
 
   workflow_call:
     inputs:
-      naming_prefix:
+      sql_server:
         type: string
         required: false
-        default: 'fifa2026'
+        default: 'fifa2026-sql-erick2026'
+      resource_group:
+        type: string
+        required: false
+        default: 'fifa2026-rg'
       run_migrations:
         type: boolean
         required: false
@@ -60,9 +72,11 @@ jobs:
     environment: production
 
     env:
-      PREFIX: ${{ inputs.naming_prefix || github.event.inputs.naming_prefix || 'fifa2026' }}
-      SQL_DB: 'FIFA2026Tickets'
-      SQL_USER: 'fifa2026admin'
+      SQL_SERVER: ${{ inputs.sql_server      || github.event.inputs.sql_server      || 'fifa2026-sql-erick2026' }}
+      SQL_RG:     ${{ inputs.resource_group  || github.event.inputs.resource_group  || 'fifa2026-rg' }}
+      SQL_FQDN:   ${{ inputs.sql_server      || github.event.inputs.sql_server      || 'fifa2026-sql-erick2026' }}.database.windows.net
+      SQL_DB:     'FIFA2026Tickets'
+      SQL_USER:   'fifa2026admin'
 
     steps:
       - name: Checkout
@@ -92,20 +106,20 @@ jobs:
       - name: Add runner IP to SQL firewall
         run: |
           az sql server firewall-rule create \
-            --resource-group "${{ env.PREFIX }}-rg" \
-            --server         "${{ env.PREFIX }}-sql" \
+            --resource-group "${{ env.SQL_RG }}" \
+            --server         "${{ env.SQL_SERVER }}" \
             --name           "github-runner-temp" \
             --start-ip-address "${{ steps.runner-ip.outputs.ip }}" \
             --end-ip-address   "${{ steps.runner-ip.outputs.ip }}" \
             --output none
-          echo "Runner IP ${{ steps.runner-ip.outputs.ip }} liberado."
+          echo "Runner IP ${{ steps.runner-ip.outputs.ip }} liberado em ${{ env.SQL_FQDN }}"
 
       - name: Reset schema (opcional)
         if: ${{ inputs.reset_schema == true || github.event.inputs.reset_schema == 'true' }}
         run: |
           echo "ATENÇÃO: Apagando todas as tabelas..."
           sqlcmd \
-            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -S "${{ env.SQL_FQDN }}" \
             -d "${{ env.SQL_DB }}" \
             -U "${{ env.SQL_USER }}" \
             -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
@@ -127,7 +141,7 @@ jobs:
       - name: Apply Schema
         run: |
           sqlcmd \
-            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -S "${{ env.SQL_FQDN }}" \
             -d "${{ env.SQL_DB }}" \
             -U "${{ env.SQL_USER }}" \
             -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
@@ -138,7 +152,7 @@ jobs:
       - name: Seed Admin User
         run: |
           sqlcmd \
-            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -S "${{ env.SQL_FQDN }}" \
             -d "${{ env.SQL_DB }}" \
             -U "${{ env.SQL_USER }}" \
             -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
@@ -149,15 +163,14 @@ jobs:
       - name: Run Migrations
         if: ${{ inputs.run_migrations == true || github.event.inputs.run_migrations == 'true' }}
         run: |
-          SQL_SERVER="${{ env.PREFIX }}-sql.database.windows.net"
-          DB="${{ env.SQL_DB }}"
-          USER="${{ env.SQL_USER }}"
-          PASS="${{ secrets.SQL_ADMIN_PASSWORD }}"
-
           echo "Executando migrations em ordem..."
           for f in $(ls -1 fifa2026-api/database/migrations/*.sql | sort); do
             echo "  → $(basename "$f")"
-            sqlcmd -S "$SQL_SERVER" -d "$DB" -U "$USER" -P "$PASS" \
+            sqlcmd \
+              -S "${{ env.SQL_FQDN }}" \
+              -d "${{ env.SQL_DB }}" \
+              -U "${{ env.SQL_USER }}" \
+              -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
               -i "$f" -I -l 60
           done
           echo "Migrations concluídas."
@@ -165,7 +178,7 @@ jobs:
       - name: Verify row counts
         run: |
           sqlcmd \
-            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -S "${{ env.SQL_FQDN }}" \
             -d "${{ env.SQL_DB }}" \
             -U "${{ env.SQL_USER }}" \
             -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
@@ -188,8 +201,8 @@ jobs:
         if: always()
         run: |
           az sql server firewall-rule delete \
-            --resource-group "${{ env.PREFIX }}-rg" \
-            --server         "${{ env.PREFIX }}-sql" \
+            --resource-group "${{ env.SQL_RG }}" \
+            --server         "${{ env.SQL_SERVER }}" \
             --name           "github-runner-temp" \
             --yes \
             --output none || true
