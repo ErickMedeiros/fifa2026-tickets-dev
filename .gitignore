@@ -68,6 +68,13 @@ pnpm-lock.yaml
 # ----- Azure local credentials -----
 .azure/
 
+# ----- Inventário e logs de deploy local (contêm credenciais) -----
+Inventory-FIFA2026-*.csv
+Deploy-FIFA2026-*.log
+
+# ----- Claude Code settings locais -----
+.claude/settings.local.json
+
 # ----- Coverage -----
 coverage/
 *.lcov
