@@ -1,0 +1,134 @@
+name: Deploy All — FIFA 2026 (Provision + DB + Backend + Frontend)
+
+# Workflow mestre: executa todo o pipeline do zero com 1 clique.
+#
+# Ordem de execução:
+#   1. Provision Infrastructure — cria/atualiza todos os recursos Azure via Bicep
+#   2. Setup Database          — aplica schema, seed e migrations no Azure SQL
+#   3. Deploy Backend          — publica a API Node.js no Web App
+#   4. Deploy Frontend         — builda e publica o React no Web App
+#
+# Auth: OIDC exclusivo. Execute infra/scripts/setup-oidc.sh antes do primeiro uso.
+#
+# Secrets necessários (Settings → Secrets → Actions):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   SQL_ADMIN_PASSWORD, JWT_SECRET
+#
+# Variável necessária (Settings → Variables → Actions):
+#   USE_OIDC = true
+#
+# Environment necessário (Settings → Environments):
+#   production  (sem regras obrigatórias para o evento)
+
+on:
+  workflow_dispatch:
+    inputs:
+      naming_prefix:
+        description: 'Prefixo dos recursos Azure (ex: fifa2026)'
+        required: true
+        default: 'fifa2026'
+      location:
+        description: 'Região Azure'
+        required: true
+        default: 'eastus2'
+      plan_sku:
+        description: 'SKU do App Service Plan'
+        required: true
+        default: 'B1'
+        type: choice
+        options: ['B1', 'B2', 'S1', 'S2', 'P1v3']
+      sql_sku:
+        description: 'SKU do Azure SQL Database'
+        required: true
+        default: 'Basic'
+        type: choice
+        options: ['Basic', 'S0', 'S1', 'S2']
+      run_migrations:
+        description: 'Executar migrations completas (times, estádios, partidas)?'
+        required: true
+        default: 'true'
+        type: boolean
+      skip_infra:
+        description: 'Pular provisionamento (infra já existe)?'
+        required: true
+        default: 'false'
+        type: boolean
+      skip_database:
+        description: 'Pular inicialização do banco?'
+        required: true
+        default: 'false'
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1 — Infraestrutura
+  # ─────────────────────────────────────────────
+  provision:
+    name: '1 — Provision Infrastructure'
+    if: ${{ github.event.inputs.skip_infra != 'true' }}
+    uses: ./.github/workflows/provision-infra.yml
+    with:
+      naming_prefix: ${{ github.event.inputs.naming_prefix }}
+      location:      ${{ github.event.inputs.location }}
+      plan_sku:      ${{ github.event.inputs.plan_sku }}
+      sql_sku:       ${{ github.event.inputs.sql_sku }}
+    secrets: inherit
+
+  # ─────────────────────────────────────────────
+  # JOB 2 — Banco de Dados
+  # ─────────────────────────────────────────────
+  setup-database:
+    name: '2 — Setup Database'
+    needs: [provision]
+    # Roda se: banco não foi pulado E (infra ok OU infra pulada)
+    if: |
+      always()
+      && github.event.inputs.skip_database != 'true'
+      && (needs.provision.result == 'success' || github.event.inputs.skip_infra == 'true')
+    uses: ./.github/workflows/setup-database.yml
+    with:
+      naming_prefix:  ${{ github.event.inputs.naming_prefix }}
+      run_migrations: ${{ github.event.inputs.run_migrations == 'true' }}
+    secrets: inherit
+
+  # ─────────────────────────────────────────────
+  # JOB 3 — Backend
+  # ─────────────────────────────────────────────
+  deploy-backend:
+    name: '3 — Deploy Backend'
+    needs: [provision, setup-database]
+    # Roda se: banco ok (ou pulado) E infra ok (ou pulada)
+    if: |
+      always()
+      && (needs.setup-database.result == 'success' || github.event.inputs.skip_database == 'true')
+      && (needs.provision.result == 'success' || github.event.inputs.skip_infra == 'true')
+    uses: ./.github/workflows/deploy-backend.yml
+    with:
+      app_name: ${{ format('{0}-back', github.event.inputs.naming_prefix) }}
+    secrets: inherit
+
+  # ─────────────────────────────────────────────
+  # JOB 4 — Frontend
+  # ─────────────────────────────────────────────
+  deploy-frontend:
+    name: '4 — Deploy Frontend'
+    needs: [provision, deploy-backend]
+    # Roda se: backend ok E infra ok (ou pulada)
+    if: |
+      always()
+      && needs.deploy-backend.result == 'success'
+      && (needs.provision.result == 'success' || github.event.inputs.skip_infra == 'true')
+    uses: ./.github/workflows/deploy-frontend.yml
+    with:
+      app_name: ${{ format('{0}-web', github.event.inputs.naming_prefix) }}
+      # Usa URL real da infra quando disponível; cai no padrão se infra foi pulada
+      backend_url: >-
+        ${{
+          needs.provision.outputs.backend_url
+          || format('https://{0}-back.azurewebsites.net', github.event.inputs.naming_prefix)
+        }}
+    secrets: inherit

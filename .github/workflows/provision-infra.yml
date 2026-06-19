@@ -1,0 +1,177 @@
+name: Provision Infrastructure (FIFA 2026)
+
+# Provisiona toda a infra Azure via Bicep:
+#   - App Service Plan (Windows, B1)
+#   - Web App frontend (fifa2026-web)
+#   - Web App backend  (fifa2026-back)
+#   - Azure SQL Server + Database (FIFA2026Tickets)
+#   - Access Restrictions: backend permite apenas IPs do frontend
+#
+# Auth: OIDC (Service Principal com Federated Credentials).
+# Execute infra/scripts/setup-oidc.sh UMA VEZ antes de usar.
+#
+# Secrets necessários:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   SQL_ADMIN_PASSWORD, JWT_SECRET
+#
+# Triggers:
+#   - workflow_dispatch (manual, via Actions → Run workflow)
+#   - workflow_call    (chamado por deploy-all.yml)
+
+on:
+  workflow_dispatch:
+    inputs:
+      naming_prefix:
+        description: 'Prefixo dos recursos (ex: fifa2026)'
+        required: true
+        default: 'fifa2026'
+      location:
+        description: 'Região Azure'
+        required: true
+        default: 'eastus2'
+      plan_sku:
+        description: 'SKU do App Service Plan'
+        required: true
+        default: 'B1'
+        type: choice
+        options: ['B1', 'B2', 'S1', 'S2', 'P1v3']
+      sql_sku:
+        description: 'SKU do Azure SQL Database'
+        required: true
+        default: 'Basic'
+        type: choice
+        options: ['Basic', 'S0', 'S1', 'S2']
+
+  workflow_call:
+    inputs:
+      naming_prefix:
+        type: string
+        required: false
+        default: 'fifa2026'
+      location:
+        type: string
+        required: false
+        default: 'eastus2'
+      plan_sku:
+        type: string
+        required: false
+        default: 'B1'
+      sql_sku:
+        type: string
+        required: false
+        default: 'Basic'
+    outputs:
+      frontend_url:
+        description: 'URL pública do frontend'
+        value: ${{ jobs.provision.outputs.frontend_url }}
+      backend_url:
+        description: 'URL do backend (input do BACKEND_URL no build do front)'
+        value: ${{ jobs.provision.outputs.backend_url }}
+      sql_fqdn:
+        description: 'FQDN do SQL Server'
+        value: ${{ jobs.provision.outputs.sql_fqdn }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  provision:
+    name: Provision Azure Resources
+    runs-on: ubuntu-latest
+    environment: production
+
+    outputs:
+      frontend_url: ${{ steps.deploy.outputs.frontendUrl }}
+      backend_url:  ${{ steps.deploy.outputs.backendUrl }}
+      sql_fqdn:     ${{ steps.deploy.outputs.sqlServerFqdn }}
+
+    env:
+      PREFIX:   ${{ inputs.naming_prefix || github.event.inputs.naming_prefix || 'fifa2026' }}
+      LOCATION: ${{ inputs.location      || github.event.inputs.location      || 'eastus2' }}
+      PLAN_SKU: ${{ inputs.plan_sku      || github.event.inputs.plan_sku      || 'B1' }}
+      SQL_SKU:  ${{ inputs.sql_sku       || github.event.inputs.sql_sku       || 'Basic' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name     "${{ env.PREFIX }}-rg" \
+            --location "${{ env.LOCATION }}" \
+            --output   table
+
+      - name: Deploy Bicep Infrastructure
+        id: deploy
+        run: |
+          OUTPUT=$(az deployment group create \
+            --resource-group "${{ env.PREFIX }}-rg" \
+            --template-file  infra/main.bicep \
+            --name           "deploy-${{ github.run_number }}" \
+            --parameters \
+              namingPrefix="${{ env.PREFIX }}" \
+              location="${{ env.LOCATION }}" \
+              appServicePlanSku="${{ env.PLAN_SKU }}" \
+              sqlDatabaseSku="${{ env.SQL_SKU }}" \
+              sqlAdminLogin="fifa2026admin" \
+              sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD }}" \
+              jwtSecret="${{ secrets.JWT_SECRET }}" \
+            --query "properties.outputs" \
+            --output json)
+
+          echo "frontendUrl=$(echo "$OUTPUT"    | jq -r '.frontendUrl.value')"    >> "$GITHUB_OUTPUT"
+          echo "backendUrl=$(echo "$OUTPUT"     | jq -r '.backendUrl.value')"     >> "$GITHUB_OUTPUT"
+          echo "sqlServerFqdn=$(echo "$OUTPUT"  | jq -r '.sqlServerFqdn.value')"  >> "$GITHUB_OUTPUT"
+          echo "frontendOutboundIps=$(echo "$OUTPUT" | jq -r '.frontendOutboundIps.value')" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Backend Access Restrictions
+        run: |
+          RG="${{ env.PREFIX }}-rg"
+          BACK="${{ env.PREFIX }}-back"
+          IPS="${{ steps.deploy.outputs.frontendOutboundIps }}"
+
+          echo "Adicionando regras Allow para IPs do frontend..."
+          PRIORITY=100
+          IFS=',' read -ra IP_ARRAY <<< "$IPS"
+          for IP in "${IP_ARRAY[@]}"; do
+            az webapp config access-restriction add \
+              --resource-group "$RG" \
+              --name           "$BACK" \
+              --rule-name      "front-${PRIORITY}" \
+              --action         Allow \
+              --ip-address     "${IP}/32" \
+              --priority       $PRIORITY \
+              --output         none
+            PRIORITY=$((PRIORITY + 1))
+          done
+
+          az webapp config access-restriction set \
+            --resource-group "$RG" \
+            --name           "$BACK" \
+            --default-action Deny \
+            --output         none
+
+          echo "Backend privado: apenas IPs do frontend autorizados."
+
+      - name: Job Summary
+        run: |
+          {
+            echo "## Infra Provisionada"
+            echo ""
+            echo "| Recurso  | Valor |"
+            echo "|----------|-------|"
+            echo "| Frontend | ${{ steps.deploy.outputs.frontendUrl }} |"
+            echo "| Backend  | ${{ steps.deploy.outputs.backendUrl }} |"
+            echo "| SQL FQDN | ${{ steps.deploy.outputs.sqlServerFqdn }} |"
+            echo ""
+            echo "> Próximo passo: inicializar o banco com **setup-database.yml**"
+          } >> "$GITHUB_STEP_SUMMARY"

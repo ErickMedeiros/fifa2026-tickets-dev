@@ -1,0 +1,196 @@
+name: Setup Database (FIFA 2026)
+
+# Inicializa o Azure SQL Database:
+#   1. Cria schema (tabelas, FKs, índices) — idempotente (IF NOT EXISTS)
+#   2. Seed do usuário admin (admin@fifa2026.com / admin123)
+#   3. Migrations opcionais (times, estádios, partidas, ingressos, dados reais)
+#
+# Auth: OIDC para az CLI (allowlist temporária do runner no SQL firewall).
+#       Credenciais SQL (user/password) usadas apenas pelo sqlcmd.
+#
+# Secrets necessários:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   SQL_ADMIN_PASSWORD
+#
+# Triggers:
+#   - workflow_dispatch (manual)
+#   - workflow_call    (chamado por deploy-all.yml)
+
+on:
+  workflow_dispatch:
+    inputs:
+      naming_prefix:
+        description: 'Prefixo dos recursos (deve bater com o provisionado)'
+        required: true
+        default: 'fifa2026'
+      run_migrations:
+        description: 'Executar migrations (times, estádios, partidas, ingressos)?'
+        required: true
+        default: 'true'
+        type: boolean
+      reset_schema:
+        description: 'Recriar schema do zero (DROP + CREATE)? Use com cuidado!'
+        required: true
+        default: 'false'
+        type: boolean
+
+  workflow_call:
+    inputs:
+      naming_prefix:
+        type: string
+        required: false
+        default: 'fifa2026'
+      run_migrations:
+        type: boolean
+        required: false
+        default: true
+      reset_schema:
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  setup-db:
+    name: Initialize Azure SQL Database
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      PREFIX: ${{ inputs.naming_prefix || github.event.inputs.naming_prefix || 'fifa2026' }}
+      SQL_DB: 'FIFA2026Tickets'
+      SQL_USER: 'fifa2026admin'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install sqlcmd (mssql-tools18)
+        run: |
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc > /dev/null
+          curl -fsSL "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list" \
+            | sudo tee /etc/apt/sources.list.d/msprod.list > /dev/null
+          sudo apt-get update -qq
+          sudo ACCEPT_EULA=Y apt-get install -y -qq mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> "$GITHUB_PATH"
+
+      - name: Get runner public IP
+        id: runner-ip
+        run: echo "ip=$(curl -fsSL https://api.ipify.org)" >> "$GITHUB_OUTPUT"
+
+      - name: Add runner IP to SQL firewall
+        run: |
+          az sql server firewall-rule create \
+            --resource-group "${{ env.PREFIX }}-rg" \
+            --server         "${{ env.PREFIX }}-sql" \
+            --name           "github-runner-temp" \
+            --start-ip-address "${{ steps.runner-ip.outputs.ip }}" \
+            --end-ip-address   "${{ steps.runner-ip.outputs.ip }}" \
+            --output none
+          echo "Runner IP ${{ steps.runner-ip.outputs.ip }} liberado."
+
+      - name: Reset schema (opcional)
+        if: ${{ inputs.reset_schema == true || github.event.inputs.reset_schema == 'true' }}
+        run: |
+          echo "ATENÇÃO: Apagando todas as tabelas..."
+          sqlcmd \
+            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -d "${{ env.SQL_DB }}" \
+            -U "${{ env.SQL_USER }}" \
+            -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
+            -Q "
+              DECLARE @sql NVARCHAR(MAX) = N'';
+              SELECT @sql += 'ALTER TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(fk.parent_object_id))
+                + '.' + QUOTENAME(OBJECT_NAME(fk.parent_object_id))
+                + ' DROP CONSTRAINT ' + QUOTENAME(fk.name) + ';'
+              FROM sys.foreign_keys fk;
+              EXEC sp_executesql @sql;
+              SET @sql = N'';
+              SELECT @sql += 'DROP TABLE IF EXISTS ' + QUOTENAME(s.name) + '.' + QUOTENAME(t.name) + ';'
+              FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id;
+              EXEC sp_executesql @sql;
+            " \
+            -I -l 60
+          echo "Schema resetado."
+
+      - name: Apply Schema
+        run: |
+          sqlcmd \
+            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -d "${{ env.SQL_DB }}" \
+            -U "${{ env.SQL_USER }}" \
+            -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
+            -i "fifa2026-api/database/schema.sql" \
+            -I -l 60
+          echo "Schema aplicado."
+
+      - name: Seed Admin User
+        run: |
+          sqlcmd \
+            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -d "${{ env.SQL_DB }}" \
+            -U "${{ env.SQL_USER }}" \
+            -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
+            -i "fifa2026-api/database/seed-admin.sql" \
+            -I -l 60
+          echo "Admin seed aplicado."
+
+      - name: Run Migrations
+        if: ${{ inputs.run_migrations == true || github.event.inputs.run_migrations == 'true' }}
+        run: |
+          SQL_SERVER="${{ env.PREFIX }}-sql.database.windows.net"
+          DB="${{ env.SQL_DB }}"
+          USER="${{ env.SQL_USER }}"
+          PASS="${{ secrets.SQL_ADMIN_PASSWORD }}"
+
+          echo "Executando migrations em ordem..."
+          for f in $(ls -1 fifa2026-api/database/migrations/*.sql | sort); do
+            echo "  → $(basename "$f")"
+            sqlcmd -S "$SQL_SERVER" -d "$DB" -U "$USER" -P "$PASS" \
+              -i "$f" -I -l 60
+          done
+          echo "Migrations concluídas."
+
+      - name: Verify row counts
+        run: |
+          sqlcmd \
+            -S "${{ env.PREFIX }}-sql.database.windows.net" \
+            -d "${{ env.SQL_DB }}" \
+            -U "${{ env.SQL_USER }}" \
+            -P "${{ secrets.SQL_ADMIN_PASSWORD }}" \
+            -Q "
+              SELECT 'users'            AS tbl, COUNT(*) AS rows FROM users
+              UNION ALL
+              SELECT 'teams',             COUNT(*) FROM teams
+              UNION ALL
+              SELECT 'stadiums',          COUNT(*) FROM stadiums
+              UNION ALL
+              SELECT 'matches',           COUNT(*) FROM matches
+              UNION ALL
+              SELECT 'ticket_categories', COUNT(*) FROM ticket_categories
+              UNION ALL
+              SELECT 'purchases',         COUNT(*) FROM purchases;
+            " \
+            -I -l 30 || true
+
+      - name: Remove runner IP from SQL firewall
+        if: always()
+        run: |
+          az sql server firewall-rule delete \
+            --resource-group "${{ env.PREFIX }}-rg" \
+            --server         "${{ env.PREFIX }}-sql" \
+            --name           "github-runner-temp" \
+            --yes \
+            --output none || true
+          echo "Regra temporária removida."

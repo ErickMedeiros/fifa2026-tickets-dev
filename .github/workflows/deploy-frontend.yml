@@ -3,9 +3,16 @@ name: Deploy Frontend (FIFA 2026 Web)
 # Builda o frontend com a BACKEND_URL embutida no web.config e
 # publica no Azure Web App definido nos inputs.
 #
+# Auth (duas opções, em ordem de precedência):
+#   1. OIDC — quando USE_OIDC=true (var do repo) ou chamado via workflow_call.
+#      Requer: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
+#      Setup: bash infra/scripts/setup-oidc.sh
+#   2. Publish Profile — quando AZURE_FRONTEND_PUBLISH_PROFILE está configurado.
+#
 # Triggers:
 #   - workflow_dispatch (manual): permite escolher backend_url e app_name
-#   - push em main: roda quando algo no Lovable/ ou neste workflow muda
+#   - push em main: quando algo no Lovable/ muda
+#   - workflow_call  (chamado por deploy-all.yml)
 
 on:
   workflow_dispatch:
@@ -18,21 +25,37 @@ on:
         description: 'Azure Web App name (frontend)'
         required: true
         default: 'fifa2026-web'
+
   push:
     branches: [main]
     paths:
       - 'Lovable/World Cup Tickets Hub/**'
       - '.github/workflows/deploy-frontend.yml'
 
+  workflow_call:
+    inputs:
+      backend_url:
+        type: string
+        required: false
+        default: 'https://fifa2026-back.azurewebsites.net'
+      app_name:
+        type: string
+        required: false
+        default: 'fifa2026-web'
+
+permissions:
+  id-token: write
+  contents: read
+
 env:
-  WORKING_DIR: 'Lovable/World Cup Tickets Hub'
-  NODE_VERSION: '20'
-  # Defaults usados quando o trigger é push (sem inputs manuais)
-  DEFAULT_BACKEND_URL: 'https://fifa2026-back.azurewebsites.net'
-  DEFAULT_APP_NAME: 'fifa2026-web'
+  WORKING_DIR:          'Lovable/World Cup Tickets Hub'
+  NODE_VERSION:         '20'
+  DEFAULT_BACKEND_URL:  'https://fifa2026-back.azurewebsites.net'
+  DEFAULT_APP_NAME:     'fifa2026-web'
 
 jobs:
   build-and-deploy:
+    name: Build & Deploy Frontend
     runs-on: ubuntu-latest
     environment: production
 
@@ -54,22 +77,31 @@ jobs:
       - name: Build (vite + set-backend-url)
         working-directory: ${{ env.WORKING_DIR }}
         env:
-          # BACKEND_URL → substituído no web.config (proxy reverso, usado em VMs)
-          # Precedência: input manual → GitHub Variable (aluno) → default (prod legado)
-          BACKEND_URL: ${{ github.event.inputs.backend_url || vars.BACKEND_URL || env.DEFAULT_BACKEND_URL }}
-          # VITE_API_URL → embutido no bundle JS (cliente chama URL absoluta)
-          # Necessário em Azure App Service B1 onde ARR proxy outbound não funciona
-          VITE_API_URL: ${{ github.event.inputs.backend_url || vars.BACKEND_URL || env.DEFAULT_BACKEND_URL }}/api
+          BACKEND_URL: >-
+            ${{
+              inputs.backend_url
+              || github.event.inputs.backend_url
+              || vars.BACKEND_URL
+              || env.DEFAULT_BACKEND_URL
+            }}
+          VITE_API_URL: >-
+            ${{
+              inputs.backend_url
+              || github.event.inputs.backend_url
+              || vars.BACKEND_URL
+              || env.DEFAULT_BACKEND_URL
+            }}/api
         run: npm run build
 
       - name: Verify VITE_API_URL embedded
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          if ! grep -q "fifa2026-back\|${{ github.event.inputs.backend_url || vars.BACKEND_URL || env.DEFAULT_BACKEND_URL }}" dist/assets/*.js; then
-            echo "::error::VITE_API_URL não foi embutido no bundle JS"
+          EXPECTED="${{ inputs.backend_url || github.event.inputs.backend_url || vars.BACKEND_URL || env.DEFAULT_BACKEND_URL }}"
+          if ! grep -qr "$EXPECTED" dist/assets/*.js 2>/dev/null; then
+            echo "::error::VITE_API_URL não encontrado no bundle JS"
             exit 1
           fi
-          echo "VITE_API_URL embutido com sucesso"
+          echo "VITE_API_URL embutido com sucesso: $EXPECTED"
 
       - name: Verify web.config substitution
         working-directory: ${{ env.WORKING_DIR }}
@@ -81,10 +113,28 @@ jobs:
           echo "BACKEND_URL final no web.config:"
           grep -E 'Rewrite url=' dist/web.config | head -1
 
+      - name: Azure Login (OIDC)
+        if: vars.USE_OIDC == 'true' || github.event_name == 'workflow_call'
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          # Precedência: input manual → GitHub Variable (aluno) → default (prod legado)
-          app-name: ${{ github.event.inputs.app_name || vars.FRONTEND_APP_NAME || env.DEFAULT_APP_NAME }}
-          publish-profile: ${{ secrets.AZURE_FRONTEND_PUBLISH_PROFILE }}
+          app-name: >-
+            ${{
+              inputs.app_name
+              || github.event.inputs.app_name
+              || vars.FRONTEND_APP_NAME
+              || env.DEFAULT_APP_NAME
+            }}
+          publish-profile: >-
+            ${{
+              (vars.USE_OIDC != 'true' && github.event_name != 'workflow_call')
+              && secrets.AZURE_FRONTEND_PUBLISH_PROFILE
+              || ''
+            }}
           package: '${{ env.WORKING_DIR }}/dist'

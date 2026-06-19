@@ -3,9 +3,17 @@ name: Deploy Backend (FIFA 2026 API)
 # Empacota o backend Node.js (com node_modules de produção e web.config
 # do iisnode) e publica no Azure Web App for Windows.
 #
+# Auth (duas opções, em ordem de precedência):
+#   1. OIDC — quando USE_OIDC=true (var do repo) ou chamado via workflow_call.
+#      Requer: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
+#      Setup: bash infra/scripts/setup-oidc.sh
+#   2. Publish Profile — quando AZURE_BACKEND_PUBLISH_PROFILE está configurado.
+#      Setup: baixar via portal/az CLI e adicionar como secret.
+#
 # Triggers:
 #   - workflow_dispatch (manual)
-#   - push em main: roda quando algo em fifa2026-api/ ou neste workflow muda
+#   - push em main: quando algo em fifa2026-api/ muda
+#   - workflow_call  (chamado por deploy-all.yml)
 
 on:
   workflow_dispatch:
@@ -14,19 +22,32 @@ on:
         description: 'Azure Web App name (backend)'
         required: true
         default: 'fifa2026-back'
+
   push:
     branches: [main]
     paths:
       - 'fifa2026-api/**'
       - '.github/workflows/deploy-backend.yml'
 
+  workflow_call:
+    inputs:
+      app_name:
+        type: string
+        required: false
+        default: 'fifa2026-back'
+
+permissions:
+  id-token: write
+  contents: read
+
 env:
-  WORKING_DIR: 'fifa2026-api'
-  NODE_VERSION: '18'
+  WORKING_DIR:      'fifa2026-api'
+  NODE_VERSION:     '18'
   DEFAULT_APP_NAME: 'fifa2026-back'
 
 jobs:
   build-and-deploy:
+    name: Build & Deploy Backend
     runs-on: ubuntu-latest
     environment: production
 
@@ -51,10 +72,30 @@ jobs:
           rm -rf logs src/logs
           rm -f .env
 
+      - name: Azure Login (OIDC)
+        if: vars.USE_OIDC == 'true' || github.event_name == 'workflow_call'
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          # Precedência: input manual → GitHub Variable (aluno) → default (prod legado)
-          app-name: ${{ github.event.inputs.app_name || vars.BACKEND_APP_NAME || env.DEFAULT_APP_NAME }}
-          publish-profile: ${{ secrets.AZURE_BACKEND_PUBLISH_PROFILE }}
+          app-name: >-
+            ${{
+              inputs.app_name
+              || github.event.inputs.app_name
+              || vars.BACKEND_APP_NAME
+              || env.DEFAULT_APP_NAME
+            }}
+          # Publish profile: usado apenas quando NÃO há login OIDC ativo.
+          # Se vazio e OIDC login foi feito, a action usa o contexto autenticado.
+          publish-profile: >-
+            ${{
+              (vars.USE_OIDC != 'true' && github.event_name != 'workflow_call')
+              && secrets.AZURE_BACKEND_PUBLISH_PROFILE
+              || ''
+            }}
           package: ${{ env.WORKING_DIR }}
