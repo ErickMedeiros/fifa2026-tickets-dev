@@ -20,11 +20,11 @@ on:
       backend_url:
         description: 'BACKEND_URL embutida no web.config (proxy /api -> aqui)'
         required: true
-        default: 'https://fifa2026-back-erick2026.azurewebsites.net'
+        default: 'https://fifa2026-back-erick2026b.azurewebsites.net'
       app_name:
         description: 'Azure Web App name (frontend)'
         required: true
-        default: 'fifa2026-web-erick2026'
+        default: 'fifa2026-web-erick2026b'
 
   push:
     branches: [main]
@@ -37,11 +37,11 @@ on:
       backend_url:
         type: string
         required: false
-        default: 'https://fifa2026-back-erick2026.azurewebsites.net'
+        default: 'https://fifa2026-back-erick2026b.azurewebsites.net'
       app_name:
         type: string
         required: false
-        default: 'fifa2026-web-erick2026'
+        default: 'fifa2026-web-erick2026b'
 
 permissions:
   id-token: write
@@ -50,8 +50,8 @@ permissions:
 env:
   WORKING_DIR:          'Lovable/World Cup Tickets Hub'
   NODE_VERSION:         '20'
-  DEFAULT_BACKEND_URL:  'https://fifa2026-back-erick2026.azurewebsites.net'
-  DEFAULT_APP_NAME:     'fifa2026-web-erick2026'
+  DEFAULT_BACKEND_URL:  'https://fifa2026-back-erick2026b.azurewebsites.net'
+  DEFAULT_APP_NAME:     'fifa2026-web-erick2026b'
 
 jobs:
   build-and-deploy:

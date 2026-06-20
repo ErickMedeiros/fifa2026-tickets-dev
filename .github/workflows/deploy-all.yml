@@ -3,9 +3,9 @@ name: Deploy All — FIFA 2026 (Provision + DB + Backend + Frontend)
 # Workflow mestre: executa todo o pipeline do zero com 1 clique.
 #
 # Ambiente atual (Central India, sufixo erick2026):
-#   Frontend : https://fifa2026-web-erick2026.azurewebsites.net
-#   Backend  : https://fifa2026-back-erick2026.azurewebsites.net
-#   SQL      : fifa2026-sql-erick2026.database.windows.net
+#   Frontend : https://fifa2026-web-erick2026b.azurewebsites.net
+#   Backend  : https://fifa2026-back-erick2026b.azurewebsites.net
+#   SQL      : fifa2026-sql-erick2026b.database.windows.net
 #   RG       : fifa2026-rg
 #
 # Ordem de execução:
@@ -33,19 +33,19 @@ on:
       backend_app_name:
         description: 'Web App backend'
         required: true
-        default: 'fifa2026-back-erick2026'
+        default: 'fifa2026-back-erick2026b'
       frontend_app_name:
         description: 'Web App frontend'
         required: true
-        default: 'fifa2026-web-erick2026'
+        default: 'fifa2026-web-erick2026b'
       backend_url:
         description: 'URL pública do backend (embutida no build do frontend)'
         required: true
-        default: 'https://fifa2026-back-erick2026.azurewebsites.net'
+        default: 'https://fifa2026-back-erick2026b.azurewebsites.net'
       sql_server:
         description: 'SQL Server name (sem .database.windows.net)'
         required: true
-        default: 'fifa2026-sql-erick2026'
+        default: 'fifa2026-sql-erick2026b'
       resource_group:
         description: 'Resource Group'
         required: true
