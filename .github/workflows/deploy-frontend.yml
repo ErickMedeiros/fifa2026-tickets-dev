@@ -114,7 +114,7 @@ jobs:
           grep -E 'Rewrite url=' dist/web.config | head -1
 
       - name: Azure Login (OIDC)
-        if: vars.USE_OIDC == 'true' || github.event_name == 'workflow_call'
+        if: vars.USE_OIDC == 'true'
         uses: azure/login@v2
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
@@ -131,10 +131,5 @@ jobs:
               || vars.FRONTEND_APP_NAME
               || env.DEFAULT_APP_NAME
             }}
-          publish-profile: >-
-            ${{
-              (vars.USE_OIDC != 'true' && github.event_name != 'workflow_call')
-              && secrets.AZURE_FRONTEND_PUBLISH_PROFILE
-              || ''
-            }}
+          publish-profile: ${{ vars.USE_OIDC != 'true' && secrets.AZURE_FRONTEND_PUBLISH_PROFILE || '' }}
           package: '${{ env.WORKING_DIR }}/dist'

@@ -73,7 +73,7 @@ jobs:
           rm -f .env
 
       - name: Azure Login (OIDC)
-        if: vars.USE_OIDC == 'true' || github.event_name == 'workflow_call'
+        if: vars.USE_OIDC == 'true'
         uses: azure/login@v2
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
@@ -90,12 +90,5 @@ jobs:
               || vars.BACKEND_APP_NAME
               || env.DEFAULT_APP_NAME
             }}
-          # Publish profile: usado apenas quando NÃO há login OIDC ativo.
-          # Se vazio e OIDC login foi feito, a action usa o contexto autenticado.
-          publish-profile: >-
-            ${{
-              (vars.USE_OIDC != 'true' && github.event_name != 'workflow_call')
-              && secrets.AZURE_BACKEND_PUBLISH_PROFILE
-              || ''
-            }}
+          publish-profile: ${{ vars.USE_OIDC != 'true' && secrets.AZURE_BACKEND_PUBLISH_PROFILE || '' }}
           package: ${{ env.WORKING_DIR }}
