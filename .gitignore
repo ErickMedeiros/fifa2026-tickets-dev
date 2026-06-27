@@ -71,6 +71,7 @@ pnpm-lock.yaml
 # ----- Inventário e logs de deploy local (contêm credenciais) -----
 Inventory-FIFA2026-*.csv
 Deploy-FIFA2026-*.log
+config_deploy.txt
 
 # ----- Claude Code settings locais -----
 .claude/settings.local.json
