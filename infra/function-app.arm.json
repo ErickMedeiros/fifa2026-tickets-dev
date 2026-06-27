@@ -69,11 +69,7 @@
             },
             {
               "name": "FUNCTIONS_WORKER_RUNTIME",
-              "value": "node"
-            },
-            {
-              "name": "WEBSITE_NODE_DEFAULT_VERSION",
-              "value": "~20"
+              "value": "dotnet-isolated"
             },
             {
               "name": "AzureWebJobsStorage",
