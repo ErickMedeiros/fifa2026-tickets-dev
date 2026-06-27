@@ -1,19 +1,37 @@
 
-Resource Group : fifa2026-rg
-Região         : Central India
-Frontend       : https://fifa2026-web-erick2026.azurewebsites.net
-Backend        : https://fifa2026-back-erick2026.azurewebsites.net
-SQL Server     : fifa2026-sql-erick2026.database.windows.net
-SQL Database   : FIFA2026Tickets
-Storage        : stfifaerick202629879
-Inventário     : C:\projetos\Inventory-FIFA2026-20260618-222446.csv
-Log            : C:\projetos\Deploy-FIFA2026-20260618-222446.log
+Infraestrutura provisionada
 
-GitHub Variables:
-BACKEND_APP_NAME  = fifa2026-back-erick2026
-FRONTEND_APP_NAME = fifa2026-web-erick2026
-BACKEND_URL       = https://fifa2026-back-erick2026.azurewebsites.net
+  ┌─────────────────┬────────────────────────────────────────────────────┐
+  │     Recurso     │                       Valor                        │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ Resource Group  │ fifa2026-rg                                        │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ Região          │ Central India                                      │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ Frontend        │ https://fifa2026-web-erick2026b.azurewebsites.net  │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ Backend         │ https://fifa2026-back-erick2026b.azurewebsites.net │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ SQL Server      │ fifa2026-sql-erick2026b.database.windows.net       │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ SQL Database    │ FIFA2026Tickets                                    │
+  ├─────────────────┼────────────────────────────────────────────────────┤
+  │ Storage Account │ stfifaerick202620733                               │
+  └─────────────────┴────────────────────────────────────────────────────┘
 
-GitHub Secrets necessários:
-AZURE_BACKEND_PUBLISH_PROFILE
-AZURE_FRONTEND_PUBLISH_PROFILE
+  ---
+  GitHub Variables
+
+  BACKEND_APP_NAME  = fifa2026-back-erick2026b
+  FRONTEND_APP_NAME = fifa2026-web-erick2026b
+  BACKEND_URL       = https://fifa2026-back-erick2026b.azurewebsites.net
+
+  GitHub Secrets a configurar
+
+  AZURE_BACKEND_PUBLISH_PROFILE
+  AZURE_FRONTEND_PUBLISH_PROFILE
+
+  ---
+  Arquivos gerados:
+  - Inventário CSV: C:\projetos\Inventory-FIFA2026-20260619-212437.csv
+  - Log completo: C:\projetos\Deploy-FIFA2026-20260619-212437.log
