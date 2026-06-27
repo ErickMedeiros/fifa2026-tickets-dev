@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  Habilita o ARR Proxy no Azure App Service (Windows).
+  Necessário para que regras <rule><action type="Rewrite" url="https://..." /></rule>
+  no web.config consigam fazer reverse proxy para URLs externas (ex.: backend privado).
+
+  Sem isso, o IIS retorna 404 estático mesmo com a regra de URL Rewrite presente.
+
+  Caminho final no App Service: D:\home\site\applicationHost.xdt
+  (subir via Kudu PUT em /api/vfs/site/applicationHost.xdt)
+-->
+<configuration xmlns:xdt="http://schemas.microsoft.com/XML-Document-Transform">
+  <system.webServer>
+    <proxy xdt:Transform="InsertIfMissing"
+           enabled="true"
+           preserveHostHeader="false"
+           reverseRewriteHostInResponseHeaders="false" />
+  </system.webServer>
+</configuration>
