@@ -10,7 +10,7 @@
 using '../main.bicep'
 
 param namingPrefix = 'fifa2026'
-param location = 'centralindia'
+param location = 'eastus2'
 param appServicePlanSku = 'B1'
 param sqlDatabaseSku = 'Basic'
 param sqlAdminLogin = 'fifa2026admin'

@@ -69,7 +69,7 @@ Distribua aos alunos **3 itens**:
 |---|---|---|
 | `fifa2026-api.zip` | VM-Back | código + `node_modules` (pronto) + `web.config` + `.env.example` |
 | `fifa2026-web.zip` | VM-Front | site estático buildado + `web.config` com placeholder |
-| `FIFA2026Tickets.bacpac` | VM-DB | banco com dados (fonte da verdade) |
+| `FIFA2026Tickets.bacpac` | VM-DB | banco com dados (fonte da verdade) — baixado do Blob, **não** do repo |
 
 > **Importante:** o ZIP **não** contém `.env` (só `.env.example`). Nenhuma credencial
 > real é distribuída — cada aluno cria o próprio `.env`.
@@ -88,14 +88,34 @@ foreach ($f in "fifa2026-api.zip","fifa2026-web.zip") {
 }
 ```
 
-URLs públicas (já referenciadas no `GUIA-EVENTO-VMS.md` e no `DEPLOY_IIS_SIMPLIFICADO.md`):
+URLs públicas (já referenciadas no `GUIA-EVENTO.md`, `GUIA-EVENTO-VMS.md` e no `DEPLOY_IIS_SIMPLIFICADO.md`):
 
 | Artefato | URL |
 |---|---|
 | Backend | `https://stotfteccopaazure.blob.core.windows.net/copa2026/fifa2026-api.zip` |
 | Frontend | `https://stotfteccopaazure.blob.core.windows.net/copa2026/fifa2026-web.zip` |
+| Banco (bacpac) | `https://stotfteccopaazure.blob.core.windows.net/copa2026/FIFA2026Tickets.bacpac` |
 
 > ⚠️ Ao **regenerar** os ZIPs (Parte A), refaça o upload com `--overwrite` — senão os alunos baixam a versão antiga.
+
+### Gerar e publicar o `.bacpac` (separado do build dos ZIPs)
+
+O bacpac **não** sai do build local — ele é **exportado do banco vivo** `fifa2026-sql` (fonte da verdade) e publicado no **mesmo container público** `copa2026`. O arquivo full de backup fica também no container privado `copa2026-db`.
+
+```powershell
+$key = az storage account keys list --account-name stotfteccopaazure --resource-group RG-DISK-DESAFIO --query "[0].value" -o tsv
+# 1. Export do banco vivo -> container privado (backup)
+az sql db export --resource-group fifa2026-rg --server fifa2026-sql --name FIFA2026Tickets `
+  --admin-user fifa2026admin --admin-password '<DB_PASSWORD>' `
+  --storage-key-type StorageAccessKey --storage-key $key `
+  --storage-uri "https://stotfteccopaazure.blob.core.windows.net/copa2026-db/FIFA2026Tickets.bacpac"
+# 2. Copiar para o container público (download do aluno, igual aos zips)
+az storage blob copy start --account-name stotfteccopaazure `
+  --destination-container copa2026 --destination-blob FIFA2026Tickets.bacpac `
+  --source-container copa2026-db --source-blob FIFA2026Tickets.bacpac --account-key $key
+```
+
+> 🔐 **Senha do `fifa2026admin`:** espelhada como app setting `DB_PASSWORD` do Web App `fifa2026-back` (não está no repo). O container `copa2026-db` deve permanecer **privado**; só `copa2026` é público.
 
 ---
 
@@ -164,3 +184,4 @@ com *proxy* habilitado em nível de servidor — necessário para o rewrite `/ap
 | Back retorna 500 ao logar | `.env` com DB errado / SQL sem mixed auth | revisar `DB_SERVER/USER/PASSWORD`, liberar :1433 |
 | `ERR_MODULE_NOT_FOUND` no back | `node_modules` não veio no zip | regerar pacote (Parte A, passo 5) |
 | Rotas SPA (F5 em `/standings`) dão 404 | regra "React Routes" do web.config ausente | reextrair o `web.config` do zip |
+| Back **não sobe** — iisnode `HRESULT 0x2` / `subStatus 1002` (`/api/health` cai mesmo com `src\index.js` no lugar) | App Pool sem permissão de **ler a pasta** / **criar `src\logs`** (comum após extrair o zip novo) — ou `node.exe` fora do PATH do IIS | `icacls "C:\inetpub\wwwroot\fifa2026-api" /grant "IIS_IUSRS:(OI)(CI)(M)" /T` + `iisreset`. Se instalou o Node agora, reinicie o IIS/VM (PATH só atualiza após restart) |

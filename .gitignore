@@ -14,6 +14,11 @@
 *.pfx
 .aiox/secrets-*.txt
 
+# ----- Config locais com credenciais (NÃO versionar) -----
+config_deploy.txt
+config_quartafinai*.txt
+Inventory-FIFA2026-*.csv
+
 # ----- Dependencies -----
 node_modules/
 **/node_modules/
@@ -23,6 +28,13 @@ dist/
 build/
 **/dist/
 **/build/
+
+# ----- .NET build artifacts -----
+[Bb]in/
+[Oo]bj/
+**/[Bb]in/
+**/[Oo]bj/
+*.user
 
 # Vite cache
 .vite/
@@ -68,14 +80,27 @@ pnpm-lock.yaml
 # ----- Azure local credentials -----
 .azure/
 
-# ----- Inventário e logs de deploy local (contêm credenciais) -----
-Inventory-FIFA2026-*.csv
-Deploy-FIFA2026-*.log
-config_deploy.txt
-
-# ----- Claude Code settings locais -----
-.claude/settings.local.json
-
 # ----- Coverage -----
 coverage/
 *.lcov
+
+# Dependencies (AIOX)
+node_modules
+
+# AIOX Local (AIOX)
+.aiox-core/local/
+.claude/settings.local.json
+.aiox/install-log.txt
+
+# ----- Tooling de IA / assistentes (não versionar no repo do app) -----
+.ai/
+.aiox-core/
+.aiox/
+.antigravity/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.kimi/
+.github/agents/
+infra/.claude/
