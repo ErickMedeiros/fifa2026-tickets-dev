@@ -15,6 +15,8 @@
 // próprio toggle do fluxo v2 no Checkout.
 // =============================================================================
 
+import { getV2AccessToken } from '@/lib/authV2';
+
 const FUNCTION_V2_URL = import.meta.env.VITE_FUNCTION_V2_URL ?? '';
 
 /** Categorias aceitas pela Function v2 (enum estável, independente do label do banco — defeito M-1). */
@@ -54,21 +56,36 @@ export interface FunctionV2Result<T> {
   httpStatus?: number;
 }
 
+// Story 4.2 (ADE-009) — a Function F1 fica atrás do gateway após o hardening
+// (GatewayKeyValidationMiddleware exige X-Gateway-Key, que só o gateway injeta).
+// Chamadas diretas ao FUNCTION_V2_URL respondem 401. Roteamos por gateway com
+// Bearer CIAM. FUNCTION_V2_URL segue como INTERRUPTOR do fluxo v2 (Checkout.tsx),
+// mas a base HTTP real é a do gateway (VITE_GATEWAY_V2_URL).
+const GATEWAY_V2_URL = import.meta.env.VITE_GATEWAY_V2_URL ?? '';
+
 function normalizeBase(): string {
-  // Remove barra final para evitar `//api/...`.
-  return FUNCTION_V2_URL.replace(/\/+$/, '');
+  return GATEWAY_V2_URL.replace(/\/+$/, '');
 }
 
 /**
- * POST /api/v2/purchase — enfileira a compra. Resposta 202 com correlationId.
+ * POST /purchase (gateway → /api/v2/purchase na Function) — enfileira a compra.
+ * Requer Bearer CIAM (o gateway rejeita 401 sem token válido).
  */
 export async function purchaseViaFunction(
   body: PurchaseFunctionV2Request
 ): Promise<FunctionV2Result<PurchaseFunctionV2Accepted>> {
+  const token = await getV2AccessToken();
+  if (!token) {
+    return { error: 'Sem sessão CIAM. Faça o "Login v2" (Entra) antes de comprar pelo fluxo v2.' };
+  }
+
   try {
-    const response = await fetch(`${normalizeBase()}/api/v2/purchase`, {
+    const response = await fetch(`${normalizeBase()}/purchase`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(body),
     });
 
@@ -83,19 +100,26 @@ export async function purchaseViaFunction(
     return { data, httpStatus: response.status };
   } catch (error) {
     console.error('Function v2 (purchase) error:', error);
-    return { error: 'Erro de conexão com a Function v2.' };
+    return { error: 'Erro de conexão com o gateway v2.' };
   }
 }
 
 /**
- * GET /api/v2/purchase/{correlationId} — consulta o status do processamento.
+ * GET /purchase/{correlationId} (gateway → /api/v2/purchase/{id}) — consulta o status.
+ * Requer Bearer CIAM.
  */
 export async function getPurchaseStatus(
   correlationId: string
 ): Promise<FunctionV2Result<PurchaseStatusV2>> {
+  const token = await getV2AccessToken();
+  if (!token) {
+    return { error: 'Sem sessão CIAM (token ausente para consulta de status).' };
+  }
+
   try {
     const response = await fetch(
-      `${normalizeBase()}/api/v2/purchase/${encodeURIComponent(correlationId)}`
+      `${normalizeBase()}/purchase/${encodeURIComponent(correlationId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
     );
 
     if (!response.ok) {
@@ -109,6 +133,6 @@ export async function getPurchaseStatus(
     return { data, httpStatus: response.status };
   } catch (error) {
     console.error('Function v2 (status) error:', error);
-    return { error: 'Erro de conexão com a Function v2.' };
+    return { error: 'Erro de conexão com o gateway v2.' };
   }
 }
