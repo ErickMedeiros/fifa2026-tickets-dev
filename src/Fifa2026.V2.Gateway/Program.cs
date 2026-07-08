@@ -142,6 +142,21 @@ builder.Services
             // Devolve o mesmo correlationId ao cliente (observabilidade de borda — AC-11).
             transformContext.HttpContext.Response.Headers[CorrelationHeader] = correlationId;
 
+            // Story 2.6 / F6 — emite AppTrace com CorrelationId para o Flow Visualizer classificar
+            // como nó 0 (GATEWAY_YARP_RECEIVED). BeginScope popula Properties.CorrelationId no trace.
+            var logger = transformContext.HttpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Gateway.YARP");
+            if (logger is not null)
+            {
+                using (logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
+                {
+                    logger.LogInformation(
+                        "Gateway YARP recebeu request: correlation-id injetado {CorrelationId} {Method} {Path}",
+                        correlationId,
+                        transformContext.HttpContext.Request.Method,
+                        transformContext.HttpContext.Request.Path.Value);
+                }
+            }
+
             return ValueTask.CompletedTask;
         });
 
