@@ -15,6 +15,8 @@ import {
   type PurchaseV2Category,
   type PurchaseV2Item,
 } from '@/lib/apiFunctionV2';
+// Story 3.5 (ADE-007 Inv 8) — resolve-or-provision JIT do usuário nato-CIAM (/api/v2/me).
+import { meV2 } from '@/lib/apiV2';
 
 // Oitavas de Final — toggle do fluxo de compra assíncrona (Function v2).
 // A presença de VITE_FUNCTION_V2_URL é o próprio interruptor: definida → v2 async.
@@ -102,7 +104,16 @@ const Checkout: React.FC = () => {
     setV2CorrelationId(null);
     setV2StatusMessage(null);
 
-    const userId = Number(user?.id);
+    // Story 3.5 — resolve/provision JIT do usuário via /api/v2/me (gateway CIAM) ANTES de
+    // montar o payload. Se houver sessão CIAM, o gateway resolve por oid → vincula por email
+    // (usuário da base v1 chegando via CIAM) → cria (nato-CIAM), devolvendo o users.id (int)
+    // que PurchaseRequest.UserId exige. Fallback: id do usuário v1 (fluxo sem gateway/CIAM,
+    // ex.: Oitavas via Function direta) — meV2() retorna { error } sem userId nesse caso.
+    let userId = Number(user?.id);
+    const me = await meV2();
+    if (me.userId && Number.isFinite(me.userId)) {
+      userId = me.userId;
+    }
     if (!Number.isFinite(userId)) {
       toast({
         title: 'Não foi possível montar o pedido',

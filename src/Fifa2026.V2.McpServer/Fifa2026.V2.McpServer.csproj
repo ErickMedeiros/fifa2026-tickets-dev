@@ -20,6 +20,13 @@
          (MESMO padrão de src/Fifa2026.V2.Functions/Data/ — Story 2.5 Dev Notes). -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Dapper" Version="2.1.35" />
+    <!-- ADE-009 Inv 2 / Story 4.1 (AC-2) — data-plane auth por Managed Identity + Entra ID.
+         DefaultAzureCredential / Azure.Core token machinery para a autenticação MI-AAD do
+         SQL (connection string `Authentication=Active Directory Managed Identity`, resolvida
+         nativamente por Microsoft.Data.SqlClient 5.2.2). O contained user do McpServer é
+         `db_datareader`-only (regra de ouro ADE-008 Inv 1 como garantia de RBAC). Versão
+         1.13.1 REUSADA de Fifa2026.V2.FlowEvents.csproj (o farol MI já pinado). -->
+    <PackageReference Include="Azure.Identity" Version="1.13.1" />
 
     <!-- Observabilidade de borda (ADE-000 Inv 5) — no-op sem connection string. -->
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />

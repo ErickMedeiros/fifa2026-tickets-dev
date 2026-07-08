@@ -12,7 +12,7 @@ namespace Fifa2026.V2.FlowEvents.Models;
 /// </summary>
 public sealed class FlowEvent
 {
-    /// <summary>Correlação ponta-a-ponta (Gateway YARP nó 0 → SQL nó 5). ADE-000 Inv 5.</summary>
+    /// <summary>Correlação ponta-a-ponta (Gateway YARP nó 0 → SQL nó 4). ADE-000 Inv 5.</summary>
     [JsonPropertyName("correlationId")]
     public string CorrelationId { get; set; } = string.Empty;
 
@@ -20,7 +20,7 @@ public sealed class FlowEvent
     [JsonPropertyName("eventType")]
     public FlowEventType EventType { get; set; }
 
-    /// <summary>Índice ordinal do nó (0..5) — usado pela animação da bolinha.</summary>
+    /// <summary>Índice ordinal do nó (0..4) — usado pela animação da bolinha.</summary>
     [JsonPropertyName("nodeIndex")]
     public int NodeIndex => (int)EventType;
 

@@ -1,4 +1,5 @@
 using Fifa2026.V2.Functions.Data;
+using Fifa2026.V2.Functions.Infrastructure;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -8,7 +9,14 @@ using Microsoft.Extensions.Logging;
 // ConfigureFunctionsWebApplication enables ASP.NET Core integration
 // (HttpRequest/IActionResult) in HTTP triggers.
 var host = new HostBuilder()
-    .ConfigureFunctionsWebApplication()
+    .ConfigureFunctionsWebApplication(workerBuilder =>
+    {
+        // Story 4.2 (ADE-009 Inv 1) — trava X-Gateway-Key nas Functions HTTP F1 (fecha o
+        // P0 do bypass). Só invocações HTTP-triggered são avaliadas; a Service Bus-triggered
+        // (PurchaseConsumerFunction) passa direto (sem HttpContext). Gating por config
+        // (segredo vazio = legado, preserva labs sem gateway — Oitavas/F1).
+        workerBuilder.UseMiddleware<GatewayKeyValidationMiddleware>();
+    })
     .ConfigureServices(services =>
     {
         // Application Insights — distributed tracing (W3C Trace Context, ADE-000 Inv 5).
@@ -19,14 +27,13 @@ var host = new HostBuilder()
         // SQL purchase repository (parameterized queries via Dapper + Microsoft.Data.SqlClient).
         services.AddSingleton<IPurchaseRepository, PurchaseRepository>();
 
-        // Story 2.4 (F4) — webhook fire-and-forget ao n8n após gravar a compra.
-        // Typed HttpClient via IHttpClientFactory (gestão correta de sockets/pooling).
-        // O timeout efetivo (5s) é controlado pelo próprio notifier via CancellationToken
-        // encadeado; mantemos o HttpClient.Timeout como guarda superior conservador.
-        services.AddHttpClient<IN8nWebhookNotifier, N8nWebhookNotifier>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
+        // Story 3.5 (ADE-007 Inv 8) — repositório de users para o resolve-or-provision do
+        // GET /api/v2/me (unificação base v1 ↔ CIAM). Mesmo padrão Dapper + SqlClient.
+        services.AddSingleton<IUserRepository, UserRepository>();
+
+        // Story 3.1 (ADE-008 Inv 3) — a notificação pós-compra agora é INLINE no consumer
+        // (log estruturado correlacionado), sem orquestração externa. Não há mais webhook/
+        // HttpClient de saída nas Functions — o registro do notifier n8n foi removido.
     })
     .ConfigureLogging(logging =>
     {

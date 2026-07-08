@@ -13,9 +13,6 @@
     "SqlConnectionString": "",
 
     "//APPLICATIONINSIGHTS_CONNECTION_STRING": "Connection string do Application Insights (observabilidade / W3C Trace Context).",
-    "APPLICATIONINSIGHTS_CONNECTION_STRING": "",
-
-    "//N8N_WEBHOOK_URL": "Story 2.4 (F4) — URL do webhook do n8n para notificação pós-compra. Ex.: https://<container-app-fqdn>/webhook/purchase. Vazio = disparo desativado (no-op silencioso). NUNCA hardcodar no código (AC-6).",
-    "N8N_WEBHOOK_URL": ""
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": ""
   }
 }

@@ -14,8 +14,9 @@ internal static class TraceEventMapper
 {
     /// <summary>
     /// Classifica um trace pelo nome da operação/role do componente e pelo conteúdo da
-    /// mensagem. Retorna null se o trace não corresponder a nenhum dos 6 hops conhecidos
-    /// (ex.: ruído de telemetria de health probe).
+    /// mensagem. Retorna null se o trace não corresponder a nenhum dos 5 hops conhecidos
+    /// (ex.: ruído de telemetria de health probe, ou a notificação pós-compra inline —
+    /// ADE-008 Inv 5: ela é "dobrada" no nó Consumer, não vira nó próprio).
     /// </summary>
     /// <param name="cloudRoleName">customDimensions/cloud_RoleName do componente emissor.</param>
     /// <param name="message">texto do trace (LogInformation).</param>
@@ -53,13 +54,8 @@ internal static class TraceEventMapper
             return FlowEventType.SERVICE_BUS_PUBLISHED;
         }
 
-        // Nó 4 — webhook do n8n (avaliado antes do consumer pois "n8n" é mais específico).
-        if (msg.Contains("webhook n8n") || msg.Contains("n8n") || role.Contains("n8n"))
-        {
-            return FlowEventType.N8N_WEBHOOK_TRIGGERED;
-        }
-
-        // Nó 5 — gravação no SQL (mensagem real do consumer ao inserir).
+        // Nó 4 — gravação no SQL (mensagem real do consumer ao inserir). Avaliado antes do
+        // nó 3 (Consumer) porque "gravada com sucesso" é o sinal mais específico do consumer.
         if (msg.Contains("gravada com sucesso") || msg.Contains("sql_inserted") || msg.Contains("purchases.correlation_id"))
         {
             return FlowEventType.SQL_INSERTED;

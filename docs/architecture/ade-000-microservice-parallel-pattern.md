@@ -67,10 +67,12 @@ WHEN NOT MATCHED THEN INSERT (...) VALUES (...);
 
 Correlation ID é propagado via:
 - **HTTP hops:** header `traceparent` (W3C) + header `X-Correlation-ID` (compat) — ambos.
-- **Service Bus hops:** `ApplicationProperties["CorrelationId"]` + .NET `Activity.Current.TraceId` automaticamente.
+- **Service Bus hops:** o `correlationId` viaja no **corpo (payload JSON) da mensagem** (`{ correlationId: "...", entraOid: "...", ... }`) e é re-emitido na telemetria pelo **`ILogger.BeginScope(new { CorrelationId })`** do consumer (→ `customDimensions.CorrelationId` no App Insights). **NÃO** via `ApplicationProperties["CorrelationId"]`. O `Activity.Current.TraceId` do .NET continua fluindo automaticamente para a correlação distribuída de baixo nível, mas **não** é a fonte do `CorrelationId` de negócio que o F6 consulta. *(Emenda M-1 — ver nota abaixo.)*
 - **Log hops:** `ILogger.BeginScope(new { CorrelationId = id })`.
 - **SQL hops:** coluna `correlation_id UNIQUEIDENTIFIER` (já em invariante 4).
-- **Webhook (n8n) hops:** body JSON `{ correlationId: "...", ... }`.
+- **Webhook hops:** ~~body JSON `{ correlationId: "...", ... }`~~ — **MOOT desde a ADE-008** (o webhook n8n foi removido; a notificação pós-compra passou a ser **inline** no consumer, correlacionada pelo mesmo `BeginScope`).
+
+> **Emenda M-1 (2026-07-01 — Aria, @architect).** O texto original desta Invariante descrevia o hop do Service Bus como `ApplicationProperties["CorrelationId"]`. A **implementação real sempre usou o corpo da mensagem + `ILogger.BeginScope`** — o código estava correto; o documento é que atrasou. Verificado em `src/Fifa2026.V2.Functions/Functions/PurchaseConsumerFunction.cs` (l.59 — o `BeginScope` lê `message.CorrelationId`, extraído do corpo; comentário canônico l.77-78: *"O payload sai do CORPO da mensagem (correlationId), não das Application Properties do Service Bus"*). Correção originalmente prevista pelo gate S2.6 (doc-fix M-1) e dobrada na **ADE-008 Inv 3**; aplicada aqui no gate da Story 3.1. A correção gêmea em `docs/stories/2.6.story.md` (AC-4, hop 2 — story **Done**) fica sinalizada para o **@po** (não editada aqui, per `story-lifecycle.md`: story Done é autoridade do @po).
 
 Functions usam `Activity` API do .NET (`System.Diagnostics.Activity`) — propagação automática para chamadas downstream desde que SDKs sejam recentes (Microsoft.ApplicationInsights 2.22+, Azure.Messaging.ServiceBus 7.17+).
 

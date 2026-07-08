@@ -24,13 +24,7 @@ on:
       app_name:
         description: 'Azure Web App name (frontend)'
         required: true
-        default: 'fifa2026-web-erick2026b'
-
-  push:
-    branches: [main]
-    paths:
-      - 'Lovable/World Cup Tickets Hub/**'
-      - '.github/workflows/deploy-frontend.yml'
+        default: 'fifa2026-web'
 
   workflow_call:
     inputs:

@@ -19,8 +19,15 @@ namespace Fifa2026.V2.Gateway.Infrastructure;
 /// ESCOPO: cacheia SOMENTE a rota YARP <c>purchase-get</c> (GET de status, keyed pelo path
 /// = correlationId). NÃO cacheia POST nem as rotas de streaming (<c>/mcp</c>, <c>/llm</c>,
 /// <c>/flow-events/hubs</c>) — cache de URL com corpos diferentes quebraria MCP/LLM/SignalR.
-/// Mantém a posição de pipeline do design original (antes da autenticação): o status é
-/// keyed pelo correlationId e não depende do usuário; só respostas 200 são armazenadas.
+///
+/// POSIÇÃO NO PIPELINE (Story 4.4 — REORDENADO): roda DEPOIS de <c>UseAuthentication</c>/
+/// <c>UseAuthorization</c> (não mais antes, como no design original). O status continua keyed
+/// pelo path/correlationId (não pelo usuário — a resposta em si não muda por quem pergunta),
+/// mas o cache só é ALCANÇADO depois que a autenticação/autorização já validaram a request.
+/// Um cache HIT, portanto, NUNCA serve o status de uma compra sem token válido: o cache
+/// economiza a chamada ao backend, não a checagem de identidade (ADE-009 §Consequences —
+/// fecha a janela em que um HIT servia o status por até 30s sem auth). Só respostas 200 são
+/// armazenadas.
 /// </summary>
 public sealed class XCacheMiddleware
 {

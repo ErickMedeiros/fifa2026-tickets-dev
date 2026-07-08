@@ -20,16 +20,13 @@ namespace Fifa2026.V2.Functions.Functions;
 public sealed class PurchaseConsumerFunction
 {
     private readonly IPurchaseRepository _repository;
-    private readonly IN8nWebhookNotifier _n8nNotifier;
     private readonly ILogger<PurchaseConsumerFunction> _logger;
 
     public PurchaseConsumerFunction(
         IPurchaseRepository repository,
-        IN8nWebhookNotifier n8nNotifier,
         ILogger<PurchaseConsumerFunction> logger)
     {
         _repository = repository;
-        _n8nNotifier = n8nNotifier;
         _logger = logger;
     }
 
@@ -72,34 +69,18 @@ public sealed class PurchaseConsumerFunction
                 case InsertOutcome.Inserted:
                     _logger.LogInformation("Compra v2 gravada com sucesso (correlationId={CorrelationId}).", message.CorrelationId);
 
-                    // Story 2.4 AC-6/AC-7 — APENAS em Inserted (não em Duplicate): dispara o
-                    // webhook do n8n para a orquestração pós-compra (e-mail mock, log, etc.).
-                    // Fire-and-forget: o notifier já encapsula timeout (5s) e try/catch e
-                    // NUNCA lança. O try/catch abaixo é defesa em profundidade — mesmo que o
-                    // notifier viole o contrato, a compra JÁ foi gravada e a mensagem do
-                    // Service Bus NUNCA pode ir ao DLQ por falha do n8n. O payload sai do
-                    // CORPO da mensagem (correlationId/entraOid), não das Application
-                    // Properties do Service Bus.
-                    try
-                    {
-                        await _n8nNotifier.NotifyPurchaseAsync(
-                            new N8nWebhookPayload
-                            {
-                                CorrelationId = message.CorrelationId,
-                                MatchId = message.MatchId,
-                                Category = message.Category,
-                                EntraOid = message.EntraOid
-                            },
-                            cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(
-                            ex,
-                            "Falha inesperada no disparo do webhook n8n (correlationId={CorrelationId}). " +
-                            "A compra já foi gravada; a mensagem do Service Bus NÃO vai ao DLQ.",
-                            message.CorrelationId);
-                    }
+                    // ADE-008 Inv 3 — notificação pós-compra INLINE (sem orquestração externa/n8n):
+                    // um log estruturado, correlacionado pelo BeginScope já aberto acima (ADE-000
+                    // Inv 5). É o trace que o motor do F6 mapeia para o nó Consumer — a notificação
+                    // fica "dobrada" nesse hop (F6 = 5 nós). Dispara APENAS em Inserted (nunca em
+                    // Duplicate/CategoryNotFound → ADE-000 Inv 4: uma reentrega do Service Bus não
+                    // re-notifica). O payload sai do CORPO da mensagem (correlationId), não das
+                    // Application Properties do Service Bus. Um log nunca lança — a defesa em
+                    // profundidade do try/catch anterior (webhook de rede) deixa de ser necessária.
+                    _logger.LogInformation(
+                        "Notificação pós-compra enviada (inline, sem orquestração externa): " +
+                        "matchId={MatchId} category={Category} (correlationId={CorrelationId}).",
+                        message.MatchId, message.Category, message.CorrelationId);
                     break;
 
                 case InsertOutcome.Duplicate:

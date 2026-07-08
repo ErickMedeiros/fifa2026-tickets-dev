@@ -1,0 +1,16 @@
+schema: 1
+story: '4.3'
+gate: CONCERNS
+status_reason: 'Testes verificados NÃO-tautológicos e skips HONESTOS. Números reproduzidos pelo próprio gate: .NET 240 aprovados / 7 ignorados / 0 falhas (4 projetos) + Jest 12/12. Única ressalva: os 7 testes de integração Testcontainers (a manchete da Frente 1 — idempotência SQL) se auto-pulam sem Docker, ausente aqui e no ambiente do @dev — logo nunca executaram verdes no repo; corretude estabelecida por inspeção contra o código de produção, não por execução. Primeira rodada no CI (runner com Docker) é o gate real da integração. Não-bloqueante (design da AC-4, GO-validado pelo @po).'
+reviewer: 'Quinn'
+updated: '2026-07-01T00:00:00Z'
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'Os 7 testes de integração Testcontainers.MsSql (Frente 1 — idempotência SQL real de PurchaseRepository/UserRepository, AC-2/3/4) se auto-pulam sem Docker. Docker está DESLIGADO tanto no ambiente do @qa (verificado: npipe dockerDesktopLinuxEngine indisponível) quanto no do @dev — logo esses 7 nunca foram executados verdes no repo. A corretude foi confirmada por inspeção direta contra o código de produção (PurchaseRepository.cs catch SqlException 2627/2601 → Duplicate; UserRepository resolve-or-provision; UNIQUE UQ_purchases_correlation_id/UQ_users_entra_oid reais), mas a rede de idempotência ainda não disparou de fato em nenhuma execução.'
+    suggested_action: 'Garantir Docker no runner de CI (ubuntu-latest já tem) e confirmar que a PRIMEIRA rodada de CI EXECUTA os 7 (Category=Integration deixa de ser Skip) e passa verde — essa é a validação de execução real da idempotência. Não-bloqueante para o gate (lastro de 245 testes verdes + inspeção), mas é pré-requisito para confiar na idempotência em produção.'
+  - id: 'TEST-002'
+    severity: low
+    finding: 'O skip via [SkippableFact]+Skip.IfNot é silent-green: se o CI perder o Docker no futuro, os 7 de integração pulam SEM falhar o build e a cobertura de idempotência evapora despercebida (o build continua "verde"). O mecanismo que protege o dev local (não ficar vermelho sem Docker) cria um ponto cego no CI.'
+    suggested_action: 'Adicionar no CI um guard de que a suíte de integração REALMENTE rodou — ex.: passo dedicado com Docker obrigatório rodando --filter Category=Integration e falhando o job se skipped>0 nesse filtro. Assim uma regressão de infra (Docker fora no CI) não derruba a cobertura em silêncio. Fora do escopo desta story (é config de pipeline @devops).'
+waiver: { active: false }

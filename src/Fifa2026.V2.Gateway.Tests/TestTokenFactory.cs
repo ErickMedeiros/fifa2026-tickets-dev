@@ -61,12 +61,33 @@ public static class TestTokenFactory
         string? issuer = null,
         string? audience = null,
         DateTime? expires = null,
-        string? oid = "99999999-8888-7777-6666-555555555555")
+        string? oid = "99999999-8888-7777-6666-555555555555",
+        string? email = null,
+        string? name = null,
+        bool emailVerified = false)
     {
         var claims = new List<Claim> { new("sub", "test-subject") };
         if (!string.IsNullOrEmpty(oid))
         {
             claims.Add(new Claim("oid", oid));
+        }
+        // Story 3.5 — claims email/name do cliente CIAM (o gateway os propaga como
+        // X-Entra-Email/X-Entra-Name, insumo do resolve-or-provision de /api/v2/me).
+        if (!string.IsNullOrEmpty(email))
+        {
+            claims.Add(new Claim("email", email));
+        }
+        if (!string.IsNullOrEmpty(name))
+        {
+            claims.Add(new Claim("name", name));
+        }
+        // Story 3.5 / A-1 (code review 2026-07-01) — email_verified. O gateway só propaga
+        // X-Entra-Email quando este claim é verdadeiro (o arm de LINK por email exige posse
+        // comprovada). Emitido como a string "true": um claim booleano do JWT chega ao
+        // ClaimsPrincipal como string, e o gateway usa bool.TryParse (aceita "true"/bool true).
+        if (emailVerified)
+        {
+            claims.Add(new Claim("email_verified", "true"));
         }
 
         return Sign(

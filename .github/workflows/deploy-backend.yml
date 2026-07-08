@@ -21,13 +21,7 @@ on:
       app_name:
         description: 'Azure Web App name (backend)'
         required: true
-        default: 'fifa2026-back-erick2026b'
-
-  push:
-    branches: [main]
-    paths:
-      - 'fifa2026-api/**'
-      - '.github/workflows/deploy-backend.yml'
+        default: 'fifa2026-back'
 
   workflow_call:
     inputs:

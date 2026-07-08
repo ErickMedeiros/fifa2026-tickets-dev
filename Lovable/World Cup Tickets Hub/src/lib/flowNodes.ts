@@ -1,5 +1,7 @@
 // =============================================================================
-// Story 2.6 / F6 — Os 6 NÓS do Flow Visualizer (fonte única da verdade do diagrama).
+// Story 2.6 / F6 — Os 5 NÓS do Flow Visualizer (fonte única da verdade do diagrama).
+// ADE-008 Inv 5 (Story 3.1): o nó do n8n foi removido e a notificação pós-compra ficou
+// INLINE no nó Function Consumer (sem orquestração externa) — 6 → 5 nós.
 //
 // A ORDEM e os rótulos refletem a arquitetura REAL implementada nas fases anteriores
 // (ADE-004). O NÓ ZERO é o Gateway YARP — NUNCA APIM (APIM não existe no EPIC-002).
@@ -7,15 +9,14 @@
 //   [0] Gateway YARP     → injeta X-Correlation-ID (nó zero do tracing)
 //   [1] Function Entry   → PurchaseEntryFunction (publica no Service Bus)
 //   [2] Service Bus      → tickets-purchase
-//   [3] Function Consumer→ PurchaseConsumerFunction (grava SQL, dispara n8n)
-//   [4] n8n              → post-purchase-notification
-//   [5] SQL              → purchases.correlation_id
+//   [3] Function Consumer→ PurchaseConsumerFunction (grava SQL + notificação pós-compra inline)
+//   [4] SQL              → purchases.correlation_id
 // =============================================================================
 
 import type { FlowEventType } from '@/lib/flowApi';
 
 export interface FlowNodeMeta {
-  /** Índice ordinal 0..5 (posição na animação). */
+  /** Índice ordinal 0..4 (posição na animação). */
   index: number;
   /** Tipo de evento que ativa este nó (bate 1:1 com o backend). */
   eventType: FlowEventType;
@@ -27,7 +28,7 @@ export interface FlowNodeMeta {
   icon: 'ShieldCheck' | 'Zap' | 'Mailbox' | 'Cog' | 'Workflow' | 'Database';
 }
 
-/** Os 6 nós, em ordem. Imutável (fonte única para FlowDiagram e animação). */
+/** Os 5 nós, em ordem. Imutável (fonte única para FlowDiagram e animação). */
 export const FLOW_NODES: readonly FlowNodeMeta[] = [
   {
     index: 0,
@@ -62,20 +63,12 @@ export const FLOW_NODES: readonly FlowNodeMeta[] = [
     label: 'Function Consumer',
     description:
       'PurchaseConsumerFunction: consome a mensagem, grava a compra no SQL de forma idempotente ' +
-      'e dispara o webhook do n8n.',
+      'e emite a notificação pós-compra INLINE (log correlacionado, sem orquestração externa — ' +
+      'ADE-008 Inv 3). A notificação fica "dobrada" neste nó, não ganha nó próprio.',
     icon: 'Cog',
   },
   {
     index: 4,
-    eventType: 'N8N_WEBHOOK_TRIGGERED',
-    label: 'n8n',
-    description:
-      'Workflow post-purchase-notification: orquestração visual pós-compra (log estruturado, ' +
-      'notificação mock). Recebe o correlationId no payload do webhook.',
-    icon: 'Workflow',
-  },
-  {
-    index: 5,
     eventType: 'SQL_INSERTED',
     label: 'SQL',
     description:

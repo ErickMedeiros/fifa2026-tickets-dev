@@ -22,6 +22,20 @@ public sealed class PurchaseRepository : IPurchaseRepository
     private readonly string _connectionString;
     private readonly ILogger<PurchaseRepository> _logger;
 
+    /// <summary>
+    /// ADE-009 Inv 2 / Story 4.1 (AC-3) — a FORMA do App Setting <c>SqlConnectionString</c>
+    /// passa de SQL auth (<c>Server=...;User Id=...;Password=...</c>) para Managed Identity +
+    /// Entra ID:
+    ///   <c>Server=tcp:&lt;srv&gt;.database.windows.net,1433;Database=&lt;db&gt;;</c>
+    ///   <c>Authentication=Active Directory Managed Identity;Encrypt=True</c>
+    ///   (se a MI for User-Assigned, adicionar <c>;User Id=&lt;client-id-da-MI&gt;</c>).
+    /// É uma troca de STRING (valor de App Setting, runtime Azure — nunca no repo), NÃO de
+    /// mecanismo: <c>Microsoft.Data.SqlClient</c> 5.2.2 resolve o token AAD nativamente a
+    /// partir da keyword <c>Authentication=</c> — <c>new SqlConnection(_connectionString)</c>
+    /// permanece intocado. Pré-requisitos de infra (Azure AD admin no servidor, contained
+    /// user + RBAC menor-privilégio) são delegados a @devops/@data-engineer. O guard
+    /// fail-closed abaixo é PRESERVADO (mensagem/comportamento inalterados).
+    /// </summary>
     public PurchaseRepository(IConfiguration configuration, ILogger<PurchaseRepository> logger)
     {
         _connectionString = configuration["SqlConnectionString"]

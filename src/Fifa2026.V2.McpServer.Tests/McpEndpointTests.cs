@@ -38,7 +38,7 @@ public sealed class McpEndpointTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
-    public async Task Mcp_client_lists_the_eight_tools_over_streamable_http()
+    public async Task Mcp_client_lists_the_seven_tools_over_streamable_http()
     {
         // HttpClient do TestServer (in-memory) aponta para o /mcp do nosso servidor.
         var httpClient = _factory.CreateClient();
@@ -68,8 +68,7 @@ public sealed class McpEndpointTests : IClassFixture<WebApplicationFactory<Progr
         Assert.Contains("consultar_classificacao", names);
         Assert.Contains("consultar_time", names);
         Assert.Contains("consultar_estadio", names);
-        // 1 tool de AÇÃO da Fase B (Story 2.9) — a primeira "mão"
-        Assert.Contains("criar_alerta_ingresso", names);
-        Assert.Equal(8, names.Count);
+        // Story 3.1 (ADE-008) — a "mão" criar_alerta_ingresso foi removida: só 7 sentidos.
+        Assert.Equal(7, names.Count);
     }
 }

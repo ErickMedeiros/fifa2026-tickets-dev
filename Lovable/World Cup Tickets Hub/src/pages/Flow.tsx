@@ -2,8 +2,8 @@
 // Story 2.6 / F6 — Rota /flow: Flow Visualizer com correlation ID em tempo real.
 //
 // A "estrela didática" do workshop. Mostra, para cada compra v2, a bolinha animada
-// percorrendo os 6 nós REAIS em tempo real via SignalR:
-//   Gateway YARP (nó 0) → Function Entry → Service Bus → Function Consumer → n8n → SQL.
+// percorrendo os 5 nós REAIS em tempo real via SignalR (ADE-008 Inv 5 — sem o nó n8n):
+//   Gateway YARP (nó 0) → Function Entry → Service Bus → Function Consumer → SQL.
 // NÓ ZERO = Gateway YARP — NUNCA APIM (ADE-004). O gateway injeta o X-Correlation-ID.
 // =============================================================================
 
@@ -71,8 +71,8 @@ export default function Flow() {
         <div>
           <h1 className="text-2xl font-bold">Flow Visualizer</h1>
           <p className="text-sm text-muted-foreground">
-            Acompanhe uma compra atravessando os 6 componentes em tempo real, por correlation ID:
-            Gateway YARP → Function Entry → Service Bus → Function Consumer → n8n → SQL.
+            Acompanhe uma compra atravessando os 5 componentes em tempo real, por correlation ID:
+            Gateway YARP → Function Entry → Service Bus → Function Consumer → SQL.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -135,7 +135,7 @@ export default function Flow() {
           <CardContent>
             {!selected ? (
               <p className="text-sm text-muted-foreground">
-                Clique numa compra à esquerda para ver a bolinha percorrer os 6 nós.
+                Clique numa compra à esquerda para ver a bolinha percorrer os 5 nós.
               </p>
             ) : listMode ? (
               // AC-9 — modo lista acessível (sem animação): nós como lista de status.

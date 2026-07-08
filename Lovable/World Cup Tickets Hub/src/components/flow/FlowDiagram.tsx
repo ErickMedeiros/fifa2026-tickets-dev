@@ -1,6 +1,8 @@
 // =============================================================================
-// Story 2.6 / F6 — Diagrama dos 6 nós + "bolinha" animada (framer-motion) percorrendo
-// Gateway YARP (nó 0) → Function Entry → Service Bus → Function Consumer → n8n → SQL.
+// Story 2.6 / F6 — Diagrama dos 5 nós + "bolinha" animada (framer-motion) percorrendo
+// Gateway YARP (nó 0) → Function Entry → Service Bus → Function Consumer → SQL.
+// ADE-008 Inv 5 (Story 3.1): o nó do n8n saiu; a notificação pós-compra é inline no
+// nó Consumer (6 → 5 nós).
 //
 // A bolinha avança até o nó mais avançado já atingido pelos eventos recebidos. Respeita
 // prefers-reduced-motion (AC-9): sem motion, a posição é estática (transição instantânea).
@@ -49,10 +51,10 @@ export function FlowDiagram({ events }: FlowDiagramProps) {
         )}
       </div>
 
-      {/* Os 6 nós (lista semântica para acessibilidade — AC-9). */}
+      {/* Os 5 nós (lista semântica para acessibilidade — AC-9). */}
       <ol
-        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
-        aria-label="Fluxo da compra: 6 nós, do Gateway YARP ao SQL"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+        aria-label="Fluxo da compra: 5 nós, do Gateway YARP ao SQL"
       >
         {FLOW_NODES.map((node) => (
           <li key={node.index}>

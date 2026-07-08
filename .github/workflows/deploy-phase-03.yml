@@ -1,0 +1,177 @@
+name: Deploy Phase 03 — Identity (Function update + Gateway JWT)
+
+# EPIC-002 / Story 2.3 (F3 — Identidade). Faz DUAS coisas, em jobs separados:
+#   1. deploy-function : rebuilda + publica a Function F1 (agora lê X-Entra-OID e
+#      grava entra_oid em SQL).
+#   2. deploy-gateway  : rebuilda a imagem do gateway YARP (agora com AddJwtBearer
+#      ATIVADO + RequireAuthorization) e atualiza o Container App, injetando a
+#      config de identidade (EntraTenantId / EntraClientId) via App Settings.
+#
+# Dispara no push da branch da fase ou manualmente.
+#
+# Pré-requisitos (configurados pelo @devops / por aluno):
+#   Function:
+#     - secret  FUNCTION_PUBLISH_PROFILE : publish profile da Function App
+#     - var     FUNCTION_APP_NAME        : nome da Function App de destino
+#   Gateway (Container App):
+#     - secret  AZURE_CREDENTIALS                : service principal (az login)
+#     - var     ACR_LOGIN_SERVER                 : ex. acrfifa2026xy.azurecr.io
+#     - var     PHASE02_CONTAINERAPP_NAME        : nome do Container App do gateway
+#     - var     PHASE02_RESOURCE_GROUP           : resource group do aluno
+#   Identidade (Story 2.3 AC-6 — fail-closed, sem default 'common'):
+#     - secret  ENTRA_TENANT_ID                  : GUID do tenant workforce do aluno
+#     - secret  ENTRA_CLIENT_ID                  : Application (client) ID da App Reg SPA
+#       (segredos, não vars — evita expor IDs de identidade no log público do run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      function_app_name:
+        description: 'Azure Function App name (override)'
+        required: false
+      containerapp_name:
+        description: 'Azure Container App name (override)'
+        required: false
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1 — Function F1 (lê X-Entra-OID → grava entra_oid).
+  # ---------------------------------------------------------------------------
+  deploy-function:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PROJECT_PATH: 'src/Fifa2026.V2.Functions'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.PROJECT_PATH }} -c Release --no-restore
+
+      - name: Test
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build
+        # do projeto de testes E da dependência Fifa2026.V2.Functions em Release.
+        # Os steps Restore/Build acima cobrem só o projeto das Functions, não o de
+        # testes — usar --no-build aqui falharia.
+        run: dotnet test src/Fifa2026.V2.Functions.Tests -c Release --verbosity normal
+        continue-on-error: false
+
+      - name: Publish
+        # --no-build seguro: o step Build acima já compilou o PROJECT_PATH em Release,
+        # que é exatamente o projeto publicado aqui.
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o ./publish --no-build
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ github.event.inputs.function_app_name || vars.FUNCTION_APP_NAME }}
+          package: ./publish
+          publish-profile: ${{ secrets.FUNCTION_PUBLISH_PROFILE }}
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — Gateway YARP (AddJwtBearer ativado + RequireAuthorization + config JWT).
+  # ---------------------------------------------------------------------------
+  deploy-gateway:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PROJECT_PATH: 'src/Fifa2026.V2.Gateway'
+      TEST_PATH: 'src/Fifa2026.V2.Gateway.Tests'
+      IMAGE_NAME: 'gateway'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.PROJECT_PATH }} -c Release --no-restore
+
+      - name: Test
+        # SEM --no-build (mesmo motivo do job da Function / gate S2.1 H-1).
+        run: dotnet test ${{ env.TEST_PATH }} -c Release --verbosity normal
+        continue-on-error: false
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      - name: Build & push Docker image
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Deploy Container App (image + identity config)
+        env:
+          CONTAINERAPP_NAME: ${{ github.event.inputs.containerapp_name || vars.PHASE02_CONTAINERAPP_NAME }}
+          ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          # Fail-closed (Story 2.3 AC-6 / carry-forward M-1): aborta o deploy se o
+          # tenant/clientId não estiverem configurados — o gateway recusaria subir.
+          if [ -z "${ENTRA_TENANT_ID}" ] || [ -z "${ENTRA_CLIENT_ID}" ]; then
+            echo "ERRO: secrets ENTRA_TENANT_ID e ENTRA_CLIENT_ID são obrigatórios (Story 2.3 AC-6)." >&2
+            exit 1
+          fi
+          # Atualiza a imagem.
+          az containerapp update \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group ${{ vars.PHASE02_RESOURCE_GROUP }} \
+            --image "$IMAGE_TAG"
+          # Injeta a config de identidade como App Settings (lidas por builder.Configuration).
+          # Os IDs ficam como secrets do Container App — não em texto no repo.
+          az containerapp update \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group ${{ vars.PHASE02_RESOURCE_GROUP }} \
+            --set-env-vars \
+              "EntraTenantId=${ENTRA_TENANT_ID}" \
+              "EntraClientId=${ENTRA_CLIENT_ID}"
+
+      - name: Smoke test (AC-11/AC-12 — 401 sem token)
+        env:
+          CONTAINERAPP_NAME: ${{ github.event.inputs.containerapp_name || vars.PHASE02_CONTAINERAPP_NAME }}
+        run: |
+          set -euo pipefail
+          echo "Resolvendo FQDN do Container App..."
+          FQDN=$(az containerapp show \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group ${{ vars.PHASE02_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Aguardando warmup (cold start scale-to-zero)..."
+          sleep 20
+          # Com F3 ativada, POST /purchase SEM Bearer deve retornar 401 (AC-6/AC-12).
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "https://${FQDN}/purchase" \
+            -X POST -H "Content-Type: application/json" \
+            -d '{"matchId":1,"category":"VIP","userId":1,"quantity":1}')
+          echo "POST /purchase sem token → HTTP $STATUS (esperado 401)."
+          if [ "$STATUS" != "401" ]; then
+            echo "ERRO: rota v2 deveria exigir JWT (401) com F3 ativada." >&2
+            exit 1
+          fi
+          echo "Smoke test OK — gateway rejeita chamada sem Bearer (JWT ativado)."

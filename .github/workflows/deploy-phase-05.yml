@@ -1,0 +1,197 @@
+name: Deploy Phase 05 — AI / MCP (McpServer Container App + Chatbot frontend)
+
+# EPIC-002 / Story 2.5 (F5 — Inteligência conversacional com MCP + LLM). Faz DUAS
+# coisas, em jobs separados:
+#   1. deploy-mcp-server : build+test do McpServer .NET (SDK ModelContextProtocol
+#      1.4.0 — ADE-002 Inv 1), build da imagem Docker, push no ACR e update do
+#      Container App. Injeta App Settings: SqlConnectionString + as keys das LLMs
+#      (GEMINI/GROQ/MISTRAL) que o PROXY server-side usa (nunca no bundle do front).
+#   2. deploy-frontend   : build do frontend (Vite) com o chatbot, com as VITE_*
+#      do gateway/proxy/provider embutidas, e deploy no Azure Web App.
+#
+# Dispara no push da branch da fase ou manualmente.
+#
+# Pré-requisitos (configurados pelo @devops / por aluno):
+#   McpServer (Container App):
+#     - secret  AZURE_CREDENTIALS              : service principal (az login)
+#     - var     ACR_LOGIN_SERVER              : ex. acrfifa2026xy.azurecr.io
+#     - var     PHASE05_MCP_APP_NAME          : nome do Container App do McpServer
+#     - var     PHASE02_RESOURCE_GROUP        : resource group do aluno (reuso de F2)
+#     - secret  PHASE05_SQL_CONNECTION_STRING : connection string do SQL (App Setting)
+#     - secret  GEMINI_API_KEY               : key Gemini (injetada server-side pelo proxy)
+#     - secret  GROQ_API_KEY                 : key Groq    (fallback — AC-12)
+#     - secret  MISTRAL_API_KEY              : key Mistral (portabilidade — AC-10)
+#   Frontend (Web App):
+#     - secret  AZURE_FRONTEND_PUBLISH_PROFILE : publish profile do Web App do front
+#     - var     FRONTEND_APP_NAME             : nome do Web App do frontend
+#     - var     VITE_GATEWAY_V2_URL           : URL do gateway YARP (rota /mcp e /llm)
+#     - var     VITE_LLM_PROXY_URL            : base do proxy de LLM (= gateway YARP)
+#     - var     VITE_LLM_PROVIDER             : gemini|groq|mistral (default gemini — AC-10)
+#
+# NOTA (segurança — AC / decisão F5): as keys das LLMs entram como App Settings/
+# secrets do McpServer (proxy server-side) e NUNCA no bundle do browser. O front só
+# conhece a URL do proxy (VITE_LLM_PROXY_URL), nunca a key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mcp_app_name:
+        description: 'McpServer Container App name (override)'
+        required: false
+      frontend_app_name:
+        description: 'Frontend Web App name (override)'
+        required: false
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20'
+  MCP_PROJECT_PATH: 'src/Fifa2026.V2.McpServer'
+  MCP_TEST_PATH: 'src/Fifa2026.V2.McpServer.Tests'
+  IMAGE_NAME: 'mcp-server'
+  WORKING_DIR: 'Lovable/World Cup Tickets Hub'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1 — McpServer .NET (7 tools MCP read-only via SDK 1.4.0) + proxy LLM server-side.
+  # ---------------------------------------------------------------------------
+  deploy-mcp-server:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ${{ env.MCP_PROJECT_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.MCP_PROJECT_PATH }} -c Release --no-restore
+
+      - name: Test
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build
+        # do projeto de testes E da dependência Fifa2026.V2.McpServer em Release.
+        # Os steps Restore/Build acima cobrem só o projeto do McpServer, não o de
+        # testes — usar --no-build aqui falharia.
+        run: dotnet test ${{ env.MCP_TEST_PATH }} -c Release --verbosity normal
+        continue-on-error: false
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      - name: Build & push Docker image
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.MCP_PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Deploy Container App + App Settings (keys NUNCA no bundle)
+        env:
+          MCP_APP_NAME: ${{ github.event.inputs.mcp_app_name || vars.PHASE05_MCP_APP_NAME }}
+          SQL_CONNECTION_STRING: ${{ secrets.PHASE05_SQL_CONNECTION_STRING }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          RG=${{ vars.PHASE02_RESOURCE_GROUP }}
+          # Atualiza a imagem.
+          az containerapp update \
+            --name "$MCP_APP_NAME" \
+            --resource-group "$RG" \
+            --image "$IMAGE_TAG"
+          # Secrets do Container App (App Settings sensíveis — nunca em var/repo).
+          az containerapp secret set \
+            --name "$MCP_APP_NAME" --resource-group "$RG" \
+            --secrets \
+              "sql-conn=${SQL_CONNECTION_STRING}" \
+              "gemini-key=${GEMINI_API_KEY}" \
+              "groq-key=${GROQ_API_KEY}" \
+              "mistral-key=${MISTRAL_API_KEY}"
+          # Env vars referenciam os secrets (secretref) — lidas por IConfiguration.
+          az containerapp update \
+            --name "$MCP_APP_NAME" --resource-group "$RG" \
+            --set-env-vars \
+              "SqlConnectionString=secretref:sql-conn" \
+              "GEMINI_API_KEY=secretref:gemini-key" \
+              "GROQ_API_KEY=secretref:groq-key" \
+              "MISTRAL_API_KEY=secretref:mistral-key"
+
+      - name: Smoke test (/health do McpServer)
+        env:
+          MCP_APP_NAME: ${{ github.event.inputs.mcp_app_name || vars.PHASE05_MCP_APP_NAME }}
+        run: |
+          set -euo pipefail
+          RG=${{ vars.PHASE02_RESOURCE_GROUP }}
+          FQDN=$(az containerapp show \
+            --name "$MCP_APP_NAME" --resource-group "$RG" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Aguardando warmup (cold start scale-to-zero)..."
+          sleep 20
+          curl -fsS "https://${FQDN}/health" | tee health.json
+          jq -e '.status == "healthy"' health.json
+          echo "Smoke test OK — McpServer healthy."
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — Frontend (chatbot React). Build Vite com VITE_* do gateway/proxy.
+  # ---------------------------------------------------------------------------
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: Lint
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm run lint
+
+      - name: Build (vite) — chatbot + proxy/provider embutidos
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          # URLs do gateway/proxy — NUNCA a key da LLM (essa fica server-side).
+          VITE_GATEWAY_V2_URL: ${{ vars.VITE_GATEWAY_V2_URL }}
+          VITE_LLM_PROXY_URL: ${{ vars.VITE_LLM_PROXY_URL }}
+          VITE_LLM_PROVIDER: ${{ vars.VITE_LLM_PROVIDER }}
+        run: npm run build
+
+      - name: Guard — nenhuma API key de LLM vazou no bundle
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          set -euo pipefail
+          # Heurística defensiva: keys de provider têm prefixos conhecidos.
+          # gsk_ (Groq), AIza (Google), e nomes de App Setting não podem aparecer no JS.
+          if grep -rqE 'gsk_[A-Za-z0-9]|AIza[0-9A-Za-z_-]{20,}|GEMINI_API_KEY|GROQ_API_KEY|MISTRAL_API_KEY' dist/assets/*.js; then
+            echo "::error::Possível API key de LLM no bundle — a key deve ficar SOMENTE no proxy server-side."
+            exit 1
+          fi
+          echo "Guard OK — nenhuma key de LLM no bundle."
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ github.event.inputs.frontend_app_name || vars.FRONTEND_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_FRONTEND_PUBLISH_PROFILE }}
+          package: '${{ env.WORKING_DIR }}/dist'

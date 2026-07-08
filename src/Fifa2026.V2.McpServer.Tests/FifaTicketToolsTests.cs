@@ -10,7 +10,7 @@ namespace Fifa2026.V2.McpServer.Tests;
 /// <summary>
 /// Testes das 3 tools MCP (AC-3/4/5). As tools são métodos estáticos que recebem
 /// o data layer por DI — mockamos <see cref="IFifaQueryRepository"/> (mesmo padrão
-/// de mock do data layer usado em N8nWebhookNotifierTests/PurchaseStatusFunctionTests).
+/// de mock do data layer dos demais testes de tools do McpServer).
 ///
 /// Cada teste confirma que a tool: (a) repassa os parâmetros corretos ao repositório
 /// e (b) devolve o resultado do repositório. O EntraOidContext é construído sobre um

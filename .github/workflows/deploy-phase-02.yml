@@ -1,0 +1,101 @@
+name: Deploy Phase 02 — Gateway YARP
+
+# Builda a imagem Docker do gateway YARP (ASP.NET Core .NET 8) da Fase 2
+# (EPIC-002 / Story 2.2), publica no Azure Container Registry e atualiza o
+# Container App do aluno. Dispara no push da branch da fase ou manualmente.
+#
+# Pré-requisitos (configurados pelo @devops / por aluno):
+#   - secret  AZURE_CREDENTIALS               : service principal (az login)
+#   - var     ACR_LOGIN_SERVER                : ex. acrfifa2026xy.azurecr.io
+#   - var     PHASE02_CONTAINERAPP_NAME       : nome do Container App do gateway
+#   - var     PHASE02_RESOURCE_GROUP          : resource group do aluno
+
+on:
+  workflow_dispatch:
+    inputs:
+      containerapp_name:
+        description: 'Azure Container App name (override)'
+        required: false
+
+env:
+  PROJECT_PATH: 'src/Fifa2026.V2.Gateway'
+  TEST_PATH: 'src/Fifa2026.V2.Gateway.Tests'
+  DOTNET_VERSION: '8.0.x'
+  IMAGE_NAME: 'gateway'
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.PROJECT_PATH }} -c Release --no-restore
+
+      - name: Test
+        # SEM --no-build (lição do gate S2.1 / H-1): o dotnet test faz restore+build
+        # do projeto de testes E da dependência Fifa2026.V2.Gateway em Release.
+        # Os steps Restore/Build acima cobrem só o projeto do gateway, não o de
+        # testes — usar --no-build aqui falharia.
+        run: dotnet test ${{ env.TEST_PATH }} -c Release --verbosity normal
+        continue-on-error: false
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      - name: Build & push Docker image
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${{ vars.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" "${{ env.PROJECT_PATH }}"
+          docker push "$IMAGE_TAG"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Deploy Container App
+        env:
+          CONTAINERAPP_NAME: ${{ github.event.inputs.containerapp_name || vars.PHASE02_CONTAINERAPP_NAME }}
+        run: |
+          set -euo pipefail
+          az containerapp update \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group ${{ vars.PHASE02_RESOURCE_GROUP }} \
+            --image "$IMAGE_TAG"
+
+      - name: Smoke test (AC-10)
+        env:
+          CONTAINERAPP_NAME: ${{ github.event.inputs.containerapp_name || vars.PHASE02_CONTAINERAPP_NAME }}
+        run: |
+          set -euo pipefail
+          echo "Resolvendo FQDN do Container App..."
+          FQDN=$(az containerapp show \
+            --name "$CONTAINERAPP_NAME" \
+            --resource-group ${{ vars.PHASE02_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Aguardando warmup (cold start scale-to-zero)..."
+          sleep 20
+          # POST /purchase no gateway → encaminhado para /api/v2/purchase na Function F1.
+          curl -fsS "https://${FQDN}/purchase" \
+            -X POST -H "Content-Type: application/json" \
+            -d '{"matchId":1,"category":"VIP","userId":1,"quantity":1}' \
+            -D headers.txt | tee response.json
+          # Falha o job se .correlationId não estiver na resposta (encaminhamento OK).
+          jq -e '.correlationId' response.json
+          # Valida que o header X-Correlation-ID foi devolvido pelo gateway (AC-8).
+          grep -i '^x-correlation-id:' headers.txt
+          echo "Smoke test OK — .correlationId presente e X-Correlation-ID devolvido."

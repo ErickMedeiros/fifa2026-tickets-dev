@@ -23,9 +23,12 @@
     <!-- SQL access: parameterized queries via Dapper over Microsoft.Data.SqlClient -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Dapper" Version="2.1.35" />
-    <!-- Story 2.4 (F4) — IHttpClientFactory para o webhook fire-and-forget ao n8n -->
-    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
-    <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
+    <!-- ADE-009 Inv 2 / Story 4.1 (AC-2) — data-plane auth por Managed Identity + Entra ID.
+         DefaultAzureCredential / Azure.Core token machinery para a autenticação MI-AAD do
+         SQL (connection string `Authentication=Active Directory Managed Identity`, resolvida
+         nativamente por Microsoft.Data.SqlClient 5.2.2). Versão 1.13.1 REUSADA de
+         Fifa2026.V2.FlowEvents.csproj (o farol MI já pinado — não é nova escolha). -->
+    <PackageReference Include="Azure.Identity" Version="1.13.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -93,7 +93,6 @@ node_modules
 .aiox/install-log.txt
 
 # ----- Tooling de IA / assistentes (não versionar no repo do app) -----
-.ai/
 .aiox-core/
 .aiox/
 .antigravity/

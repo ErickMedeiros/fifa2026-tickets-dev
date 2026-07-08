@@ -60,4 +60,7 @@ const gatewayTrustMiddleware = (req, res, next) => {
   return authMiddleware(req, res, () => adminMiddleware(req, res, next));
 };
 
-module.exports = { gatewayTrustMiddleware };
+// `safeEqual` é exportado ADICIONALMENTE (Story 4.3 — cobertura unitária). O único
+// consumidor de produção importa apenas `{ gatewayTrustMiddleware }` (routes/admin.js), então
+// expor a função auxiliar não altera nenhum comportamento — só a torna testável isoladamente.
+module.exports = { gatewayTrustMiddleware, safeEqual };

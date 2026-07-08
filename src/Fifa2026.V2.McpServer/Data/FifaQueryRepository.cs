@@ -19,6 +19,21 @@ public sealed class FifaQueryRepository : IFifaQueryRepository
     private readonly string _connectionString;
     private readonly ILogger<FifaQueryRepository> _logger;
 
+    /// <summary>
+    /// ADE-009 Inv 2 / Story 4.1 (AC-3) — a FORMA do App Setting <c>SqlConnectionString</c>
+    /// passa de SQL auth (<c>Server=...;User Id=...;Password=...</c>) para Managed Identity +
+    /// Entra ID:
+    ///   <c>Server=tcp:&lt;srv&gt;.database.windows.net,1433;Database=&lt;db&gt;;</c>
+    ///   <c>Authentication=Active Directory Managed Identity;Encrypt=True</c>
+    ///   (se a MI for User-Assigned, adicionar <c>;User Id=&lt;client-id-da-MI&gt;</c>).
+    /// É uma troca de STRING (valor de App Setting, runtime Azure — nunca no repo), NÃO de
+    /// mecanismo: <c>Microsoft.Data.SqlClient</c> 5.2.2 resolve o token AAD nativamente a
+    /// partir da keyword <c>Authentication=</c> — os <c>new SqlConnection(_connectionString)</c>
+    /// das queries permanecem intocados. O contained user desta MI é <b>db_datareader-only</b>
+    /// (AC-7 / ADE-008 Inv 1 "regra de ouro") — nenhuma escrita possível no nível do banco.
+    /// DDL delegada a @data-engineer; RBAC/provisionamento a @devops. O guard fail-closed
+    /// abaixo é PRESERVADO (mensagem/comportamento inalterados).
+    /// </summary>
     public FifaQueryRepository(IConfiguration configuration, ILogger<FifaQueryRepository> logger)
     {
         _connectionString = configuration["SqlConnectionString"]

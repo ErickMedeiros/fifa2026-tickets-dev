@@ -12,6 +12,11 @@ public sealed class FlowEventTests
     {
         var ev = new FlowEvent { EventType = FlowEventType.FUNCTION_CONSUMER_DONE };
         Assert.Equal(3, ev.NodeIndex);
+
+        // ADE-008 Inv 5 — o nó do n8n saiu e SQL_INSERTED foi renumerado 5 → 4. O NodeIndex
+        // (usado pela animação) deriva do ordinal, então este é o guarda direto do renumber.
+        var sql = new FlowEvent { EventType = FlowEventType.SQL_INSERTED };
+        Assert.Equal(4, sql.NodeIndex);
     }
 
     [Fact]
