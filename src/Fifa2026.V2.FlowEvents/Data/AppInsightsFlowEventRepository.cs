@@ -35,37 +35,40 @@ public sealed class AppInsightsFlowEventRepository : IFlowEventRepository
         _client = new LogsQueryClient(new DefaultAzureCredential());
     }
 
-    /// <summary>Query Kusto da timeline de um correlationId (validada contra docs.microsoft.com).</summary>
+    // NOTE: workspace-based App Insights → tabela AppTraces (não classic 'traces').
+    // project-rename preserva o contrato de leitura por row.GetXxx("nome") do código.
+
+    /// <summary>Query Kusto da timeline de um correlationId (AppTraces).</summary>
     private const string TimelineQuery = """
-        traces
-        | where tostring(customDimensions.CorrelationId) == correlationId
-        | project timestamp, message, severityLevel, cloud_RoleName, customDimensions
+        AppTraces
+        | where tostring(Properties.CorrelationId) == correlationId
+        | project timestamp=TimeGenerated, message=Message, severityLevel=SeverityLevel, cloud_RoleName=AppRoleName, customDimensions=Properties
         | order by timestamp asc
         | limit 100
         """;
 
     /// <summary>Query Kusto das últimas N compras (traces de entrada do gateway/entry).</summary>
     private const string RecentQuery = """
-        traces
-        | where isnotempty(tostring(customDimensions.CorrelationId))
-        | summarize timestamp = min(timestamp), maxSeverity = max(severityLevel)
-            by correlationId = tostring(customDimensions.CorrelationId)
+        AppTraces
+        | where isnotempty(tostring(Properties.CorrelationId))
+        | summarize timestamp = min(TimeGenerated), maxSeverity = max(SeverityLevel)
+            by correlationId = tostring(Properties.CorrelationId)
         | order by timestamp desc
         | limit topN
         """;
 
     /// <summary>
     /// Story 4.6 (Diploma vivo) — últimas N compras de UM aluno. Filtra
-    /// <c>customDimensions.UserId</c> (gravado pelo PurchaseEntryFunction em cada trace de
+    /// <c>Properties.UserId</c> (gravado pelo PurchaseEntryFunction em cada trace de
     /// entrada) além do CorrelationId. É a MESMA query da lista recente, só escopada ao
     /// usuário — nenhuma nova fonte de verdade (reúso do farol F6, AC-2).
     /// </summary>
     private const string ByUserQuery = """
-        traces
-        | where isnotempty(tostring(customDimensions.CorrelationId))
-        | where tostring(customDimensions.UserId) == userId
-        | summarize timestamp = min(timestamp), maxSeverity = max(severityLevel)
-            by correlationId = tostring(customDimensions.CorrelationId)
+        AppTraces
+        | where isnotempty(tostring(Properties.CorrelationId))
+        | where tostring(Properties.UserId) == userId
+        | summarize timestamp = min(TimeGenerated), maxSeverity = max(SeverityLevel)
+            by correlationId = tostring(Properties.CorrelationId)
         | order by timestamp desc
         | limit topN
         """;
