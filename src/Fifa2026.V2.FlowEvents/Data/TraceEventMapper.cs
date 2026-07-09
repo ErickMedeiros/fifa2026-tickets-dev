@@ -33,23 +33,21 @@ internal static class TraceEventMapper
         }
 
         // Nó 0 — Gateway YARP (injeta X-Correlation-ID; nó zero). NÃO usa "apim".
-        // Exige o sinal de correlação (mensagem do transform) OU role gateway/yarp +
-        // ausência de marcadores de hops posteriores — o gateway é a borda do fluxo.
         if (msg.Contains("x-correlation-id") || msg.Contains("correlation-id injetado")
-            || (role.Contains("gateway") && (msg.Contains("recebid") || msg.Contains("request")))
-            || (role.Contains("yarp") && (msg.Contains("recebid") || msg.Contains("request"))))
+            || (role.Contains("gateway") && (msg.Contains("recebid") || msg.Contains("request") || msg.Contains("injetado")))
+            || (role.Contains("yarp") && (msg.Contains("recebid") || msg.Contains("request") || msg.Contains("injetado"))))
         {
             return FlowEventType.GATEWAY_YARP_RECEIVED;
         }
 
         // Nó 1 — PurchaseEntryFunction: "Compra v2 recebida" (mensagem real da F1).
-        if (msg.Contains("compra v2 recebida"))
+        if (msg.Contains("compra v2 recebida") || msg.Contains("compra v2 (linha"))
         {
             return FlowEventType.FUNCTION_ENTRY_PROCESSED;
         }
 
         // Nó 2 — Service Bus publish (mensagem enfileirada em tickets-purchase).
-        if (msg.Contains("tickets-purchase") && (msg.Contains("publish") || msg.Contains("publicad")))
+        if (msg.Contains("tickets-purchase") && (msg.Contains("publish") || msg.Contains("publicad") || msg.Contains("publicando")))
         {
             return FlowEventType.SERVICE_BUS_PUBLISHED;
         }
