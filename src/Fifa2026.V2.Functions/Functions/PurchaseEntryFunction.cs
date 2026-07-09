@@ -145,13 +145,13 @@ public sealed class PurchaseEntryFunction
                 var correlationId = Guid.NewGuid();
                 correlationIds.Add(correlationId);
 
-                _logger.LogInformation(
+                _logger.LogWarning(
                     "Compra v2 recebida (linha {Index}/{Total}): correlationId={CorrelationId} matchId={MatchId} category={Category} userId={UserId} quantity={Quantity} hasEntraIdentity={HasEntraIdentity}",
                     i + 1, request.Items.Count, correlationId, item.MatchId, item.Category, request.UserId, item.Quantity, entraOid.HasValue);
 
                 using (_logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
                 {
-                    _logger.LogInformation(
+                    _logger.LogWarning(
                         "Publicando compra v2 na fila tickets-purchase (correlationId={CorrelationId}).",
                         correlationId);
                 }

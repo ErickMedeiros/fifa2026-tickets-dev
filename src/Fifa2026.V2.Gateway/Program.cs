@@ -149,7 +149,9 @@ builder.Services
             {
                 using (logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
                 {
-                    logger.LogInformation(
+                    // LogWarning para escapar do filtro default do provider AppInsights (Warning+)
+                    // — o Flow Visualizer precisa dessa trace para acender o nó 0 (Story 2.6 AC-4).
+                    logger.LogWarning(
                         "Gateway YARP recebeu request: correlation-id injetado {CorrelationId} {Method} {Path}",
                         correlationId,
                         transformContext.HttpContext.Request.Method,
