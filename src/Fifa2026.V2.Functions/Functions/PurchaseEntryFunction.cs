@@ -30,6 +30,14 @@ public sealed class PurchaseEntryFunction
     /// </summary>
     private const string EntraOidHeader = "X-Entra-OID";
 
+    /// <summary>
+    /// Story 2.6 / F6 — correlationId injetado pelo gateway (nó zero). A Function reusa esse
+    /// header como correlationId do PRIMEIRO item do carrinho para que o Flow Visualizer una
+    /// os traces gateway → entry → SB → consumer → SQL num único correlation. Itens extras
+    /// mantêm correlationIds únicos (fan-out independente).
+    /// </summary>
+    private const string CorrelationHeader = "X-Correlation-ID";
+
     private readonly ILogger<PurchaseEntryFunction> _logger;
 
     public PurchaseEntryFunction(ILogger<PurchaseEntryFunction> logger)
@@ -136,13 +144,24 @@ public sealed class PurchaseEntryFunction
         var correlationIds = new List<Guid>(request.Items.Count);
         var messages = new string[request.Items.Count];
 
+        // Story 2.6 / F6 — reusa o correlationId do gateway (X-Correlation-ID) para o item 0
+        // → Flow Visualizer une gateway + entry + SB + consumer + SQL num único trace.
+        Guid? gatewayCorrelationId = null;
+        var correlationHeader = req.Headers[CorrelationHeader].ToString();
+        if (!string.IsNullOrWhiteSpace(correlationHeader) && Guid.TryParse(correlationHeader, out var parsedCid))
+        {
+            gatewayCorrelationId = parsedCid;
+        }
+
         // BeginScope com orderId → App Insights agrupa todas as linhas do pedido (ADE-000 Inv 5).
         using (_logger.BeginScope(new Dictionary<string, object> { ["OrderId"] = orderId }))
         {
             for (var i = 0; i < request.Items.Count; i++)
             {
                 var item = request.Items[i];
-                var correlationId = Guid.NewGuid();
+                var correlationId = i == 0 && gatewayCorrelationId.HasValue
+                    ? gatewayCorrelationId.Value
+                    : Guid.NewGuid();
                 correlationIds.Add(correlationId);
 
                 _logger.LogWarning(
