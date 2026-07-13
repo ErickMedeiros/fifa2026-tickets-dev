@@ -1,0 +1,37 @@
+# --- Você digita só estes dois ---
+$rg   = "<seu-rg>"        # o RG onde você criou tudo (Fases 1-6)
+$func = "<seu-func>"      # nome GLOBAL único da Function App (ainda NÃO existe — você escolhe)
+
+# --- Descobre os nomes dos recursos existentes no RG ---
+$loc     = az group show -n $rg --query location -o tsv
+$plano   = az appservice plan list -g $rg --query "[0].name" -o tsv
+$storage = az storage account list -g $rg --query "[0].name" -o tsv
+$appi    = az resource list -g $rg --resource-type microsoft.insights/components --query "[0].name" -o tsv
+$sql     = az sql server list -g $rg --query "[0].name" -o tsv
+$sb      = az servicebus namespace list -g $rg --query "[0].name" -o tsv
+
+# --- Confere o que foi descoberto ANTES de criar (jeito PowerShell, sem printf) ---
+[pscustomobject]@{ RG=$rg; LOC=$loc; PLAN=$plano; STORAGE=$storage; APPI=$appi; SQL=$sql; SB=$sb } | Format-List
+
+# --- Cria a Function App no plano B1 (Windows, .NET 8 isolated, Functions v4) ---
+az functionapp create `
+  --resource-group $rg `
+  --name $func `
+  --plan $plano `
+  --storage-account $storage `
+  --app-insights $appi `
+  --runtime dotnet-isolated `
+  --runtime-version 8 `
+  --functions-version 4 `
+  --os-type Windows
+
+# 7.3 — Always On (necessário p/ o trigger do Service Bus em plano dedicado)
+az functionapp config set --resource-group $rg --name $func --always-on true
+
+# 7.4 — SCM Basic Auth On (necessário p/ o deploy via Actions / publish profile)
+az resource update `
+  --resource-group $rg `
+  --namespace Microsoft.Web `
+  --resource-type basicPublishingCredentialsPolicies `
+  --name scm --parent "sites/$func" `
+  --set properties.allow=true

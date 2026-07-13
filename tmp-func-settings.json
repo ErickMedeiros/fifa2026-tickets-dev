@@ -1,0 +1,5 @@
+[
+  {"name":"GATEWAY_SHARED_SECRET","value":"@Microsoft.KeyVault(SecretUri=https://kv-certi-fifa2026.vault.azure.net/secrets/gateway-admin-shared-secret/)","slotSetting":false},
+  {"name":"SqlConnectionString","value":"@Microsoft.KeyVault(SecretUri=https://kv-certi-fifa2026.vault.azure.net/secrets/sql-connection-string/)","slotSetting":false},
+  {"name":"ServiceBusConnection","value":"@Microsoft.KeyVault(SecretUri=https://kv-certi-fifa2026.vault.azure.net/secrets/servicebus-connection-string/)","slotSetting":false}
+]

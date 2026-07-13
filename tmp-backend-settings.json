@@ -1,0 +1,4 @@
+[
+  {"name":"GATEWAY_SHARED_SECRET","value":"@Microsoft.KeyVault(SecretUri=https://kv-certi-fifa2026.vault.azure.net/secrets/gateway-admin-shared-secret/)","slotSetting":false},
+  {"name":"DB_PASSWORD","value":"@Microsoft.KeyVault(SecretUri=https://kv-certi-fifa2026.vault.azure.net/secrets/backend-sql-password/)","slotSetting":false}
+]
